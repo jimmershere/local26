@@ -235,7 +235,18 @@ env_from_server_name_char_map = s:sys,q:qa,p:production"
     servers="$(printf '%s' "$servers" | sed -E 's/[[:space:]]*,[[:space:]]*/,/g; s/[[:space:]]+/,/g; s/,+/,/g; s/^,+//; s/,+$//')"
 
     if [ -n "$backup" ]; then
-      backup="$(printf '%s' "$backup" | tr '[:upper:]' '[:lower:]')"
+      local backup_raw backup_normalized
+      backup_raw="$backup"
+      backup_normalized="$(printf '%s' "$backup" | tr '[:upper:]' '[:lower:]')"
+      case "$backup_normalized" in
+        true|false)
+          backup="$backup_normalized"
+          ;;
+        *)
+          warn "legacy section [${scope}] has invalid backup value '${backup_raw}'; expected true/false, ignoring"
+          backup=""
+          ;;
+      esac
     fi
 
     config+="
@@ -267,7 +278,7 @@ backup_suffix = ${backup_suffix}"
     local last_success="null"
     if [ -f "state/${scope}.last" ]; then
       local epoch
-      epoch="$(date -u -r "state/${scope}.last" +%s)"
+      epoch="$(stat -c %Y "state/${scope}.last")"
       last_success="\"$(iso8601_utc_from_epoch "$epoch")\""
     fi
 
