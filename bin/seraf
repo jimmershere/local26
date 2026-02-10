@@ -1,0 +1,299 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
+
+SERAF_VERSION="0.1"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  seraf init [--import PATH] [--force] [--project NAME]
+  seraf help
+USAGE
+}
+
+err() {
+  printf 'seraf: %s\n' "$*" >&2
+}
+
+warn() {
+  printf 'seraf: warning: %s\n' "$*" >&2
+}
+
+iso8601_utc_from_epoch() {
+  local epoch="$1"
+  date -u -d "@${epoch}" +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+atomic_write() {
+  local target="$1"
+  local content="$2"
+  local dir tmp
+  dir="$(dirname "$target")"
+  tmp="$(mktemp "${dir}/.tmp.XXXXXX")"
+  printf '%s' "$content" > "$tmp"
+  mv -f "$tmp" "$target"
+}
+
+init_command() {
+  local import_path=""
+  local force=0
+  local project_name=""
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --import)
+        [ "$#" -ge 2 ] || { err "--import requires a path"; return 2; }
+        import_path="$2"
+        shift 2
+        ;;
+      --force)
+        force=1
+        shift
+        ;;
+      --project)
+        [ "$#" -ge 2 ] || { err "--project requires a name"; return 2; }
+        project_name="$2"
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      *)
+        err "unknown option: $1"
+        usage >&2
+        return 2
+        ;;
+    esac
+  done
+
+  if [ -z "$project_name" ]; then
+    project_name="$(basename "$(pwd)")"
+  fi
+
+  mkdir -p .seraf/state .seraf/plans .seraf/runs .seraf/logs
+  : > .seraf/seraf.lock
+
+  exec 9>>.seraf/seraf.lock
+  flock 9
+
+  if [ -f .seraf/config.ini ] && [ "$force" -ne 1 ]; then
+    err ".seraf/config.ini already exists; rerun with --force to overwrite"
+    return 1
+  fi
+
+  local tmp_kv tmp_scopes
+  tmp_kv="$(mktemp .seraf/.legacy_kv.XXXXXX)"
+  tmp_scopes="$(mktemp .seraf/.legacy_scopes.XXXXXX)"
+  : > "$tmp_kv"
+  : > "$tmp_scopes"
+
+  local had_import=0
+  if [ -n "$import_path" ]; then
+    [ -f "$import_path" ] || { rm -f "$tmp_kv" "$tmp_scopes"; err "legacy config not found: $import_path"; return 1; }
+    had_import=1
+
+    awk -v kvout="$tmp_kv" -v scopesout="$tmp_scopes" '
+      function trim(s) { gsub(/^[ \t\r\n]+/, "", s); gsub(/[ \t\r\n]+$/, "", s); return s }
+      BEGIN { section="" }
+      {
+        line=$0
+        sub(/\r$/, "", line)
+        if (line ~ /^[ \t]*$/) next
+        if (line ~ /^[ \t]*[;#]/) next
+        if (line ~ /^[ \t]*\[/) {
+          if (match(line, /^[ \t]*\[([^\]]+)\][ \t]*$/, m)) {
+            section=trim(m[1])
+            if (section != "") print section >> scopesout
+            next
+          } else {
+            printf("PARSE_ERROR\tinvalid section header\t%d\n", NR) >> kvout
+            next
+          }
+        }
+        if (section == "") {
+          printf("PARSE_ERROR\tkey/value outside section\t%d\n", NR) >> kvout
+          next
+        }
+        if (match(line, /^[ \t]*([^=]+)[ \t]*=[ \t]*(.*)$/, m)) {
+          key=tolower(trim(m[1]))
+          value=trim(m[2])
+          printf("KV\t%s\t%s\t%s\n", section, key, value) >> kvout
+        } else {
+          printf("PARSE_ERROR\tinvalid key/value\t%d\n", NR) >> kvout
+        }
+      }
+    ' "$import_path"
+  fi
+
+  local parse_errors
+  parse_errors="$(awk -F'\t' '$1=="PARSE_ERROR" {print $0}' "$tmp_kv" || true)"
+  if [ -n "$parse_errors" ]; then
+    printf '%s\n' "$parse_errors" | while IFS=$'\t' read -r _ msg line_no; do
+      err "legacy parse error at line ${line_no}: ${msg}"
+    done
+    rm -f "$tmp_kv" "$tmp_scopes"
+    return 1
+  fi
+
+  local scope_list_file
+  scope_list_file="$(mktemp .seraf/.scope_list.XXXXXX)"
+  if [ "$had_import" -eq 1 ]; then
+    sort -u "$tmp_scopes" > "$scope_list_file"
+  else
+    : > "$scope_list_file"
+  fi
+
+  local unknown_warned
+  unknown_warned="$(mktemp .seraf/.unknown_warned.XXXXXX)"
+  : > "$unknown_warned"
+
+  local unknowns
+  unknowns="$(awk -F'\t' '$1=="KV" && $3!="source_dir" && $3!="target_dir" && $3!="servers" && $3!="rsync_opts" && $3!="backup" && $3!="backup_suffix" {print $3}' "$tmp_kv" | sort -u || true)"
+  if [ -n "$unknowns" ]; then
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      warn "ignoring unknown legacy key: ${k}"
+    done <<< "$unknowns"
+  fi
+
+  local default_scope="default"
+  if [ -s "$scope_list_file" ]; then
+    default_scope="$(head -n1 "$scope_list_file")"
+  fi
+
+  local jq_path=""
+  if command -v jq >/dev/null 2>&1; then
+    jq_path="$(command -v jq)"
+  fi
+
+  local config
+  config="[seraf]
+version=${SERAF_VERSION}
+project=${project_name}
+default_scope=${default_scope}
+state_dir=.seraf/state
+plans_dir=.seraf/plans
+runs_dir=.seraf/runs
+logs_dir=.seraf/logs
+lock_file=.seraf/seraf.lock
+require_plan_for_deploy=true
+fail_fast=true
+max_parallel=4
+shell=/usr/bin/bash
+
+[tools]
+ssh=/usr/bin/ssh
+rsync=/usr/bin/rsync
+find=/usr/bin/find"
+  if [ -n "$jq_path" ]; then
+    config+="
+jq=${jq_path}"
+  fi
+
+  config+="
+
+[defaults]
+rsync_opts=-az
+backup=true
+backup_suffix=.bkp
+remote_mkdir=true
+dry_run_default=false
+
+[routing]
+env_from_filename_prefix=s:sys,q:qa,p:production
+env_from_server_name_char_at=4
+env_from_server_name_char_map=s:sys,q:qa,p:production"
+
+  local scope
+  while IFS= read -r scope; do
+    [ -n "$scope" ] || continue
+    local source_dir target_dir servers rsync_opts backup backup_suffix
+    source_dir="$(awk -F'\t' -v s="$scope" '$1=="KV" && $2==s && $3=="source_dir" {print $4; exit}' "$tmp_kv")"
+    target_dir="$(awk -F'\t' -v s="$scope" '$1=="KV" && $2==s && $3=="target_dir" {print $4; exit}' "$tmp_kv")"
+    servers="$(awk -F'\t' -v s="$scope" '$1=="KV" && $2==s && $3=="servers" {print $4; exit}' "$tmp_kv")"
+    rsync_opts="$(awk -F'\t' -v s="$scope" '$1=="KV" && $2==s && $3=="rsync_opts" {print $4; exit}' "$tmp_kv")"
+    backup="$(awk -F'\t' -v s="$scope" '$1=="KV" && $2==s && $3=="backup" {print $4; exit}' "$tmp_kv")"
+    backup_suffix="$(awk -F'\t' -v s="$scope" '$1=="KV" && $2==s && $3=="backup_suffix" {print $4; exit}' "$tmp_kv")"
+
+    if [ -z "$source_dir" ] || [ -z "$target_dir" ] || [ -z "$servers" ]; then
+      rm -f "$tmp_kv" "$tmp_scopes" "$scope_list_file" "$unknown_warned"
+      err "legacy section [${scope}] missing required keys (source_dir, target_dir, servers)"
+      return 1
+    fi
+
+    servers="$(printf '%s' "$servers" | sed 's/[[:space:]]*,[[:space:]]*/,/g; s/^[[:space:]]*//; s/[[:space:]]*$//; s/[[:space:]]\+/,/g')"
+
+    config+="
+
+[scope \"${scope}\"]
+enabled=true
+source_dir=${source_dir}
+target_dir=${target_dir}
+servers=${servers}
+discovery=mtime_since_last_success"
+    if [ -n "$rsync_opts" ]; then
+      config+="
+rsync_opts=${rsync_opts}"
+    fi
+    if [ -n "$backup" ]; then
+      config+="
+backup=${backup}"
+    fi
+    if [ -n "$backup_suffix" ]; then
+      config+="
+backup_suffix=${backup_suffix}"
+    fi
+  done < "$scope_list_file"
+
+  atomic_write .seraf/config.ini "$config"
+
+  while IFS= read -r scope; do
+    [ -n "$scope" ] || continue
+    local last_success="null"
+    if [ -f "state/${scope}.last" ]; then
+      local epoch
+      epoch="$(date -u -r "state/${scope}.last" +%s)"
+      last_success="\"$(iso8601_utc_from_epoch "$epoch")\""
+    fi
+
+    local ts
+    ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    local state_json
+    state_json="{
+  \"schema\":\"seraf.state.v0.1\",
+  \"scope\":\"${scope}\",
+  \"created_at\":\"${ts}\",
+  \"last_success\":${last_success},
+  \"last_plan_id\":null,
+  \"last_run_id\":null,
+  \"files_last_deployed_count\":0
+}"
+    atomic_write ".seraf/state/${scope}.json" "$state_json"
+  done < "$scope_list_file"
+
+  rm -f "$tmp_kv" "$tmp_scopes" "$scope_list_file" "$unknown_warned"
+
+  printf 'Initialized SERAF .seraf workspace\n'
+}
+
+main() {
+  local cmd="${1:-help}"
+  case "$cmd" in
+    init)
+      shift
+      init_command "$@"
+      ;;
+    help|-h|--help)
+      usage
+      ;;
+    *)
+      err "unknown command: $cmd"
+      usage >&2
+      return 2
+      ;;
+  esac
+}
+
+main "$@"
