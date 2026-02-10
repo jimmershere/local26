@@ -83,18 +83,32 @@ init_command() {
     return 1
   fi
 
-  local tmp_kv tmp_scopes
+  local tmp_kv tmp_scopes scope_list_file
   tmp_kv="$(mktemp .seraf/.legacy_kv.XXXXXX)"
   tmp_scopes="$(mktemp .seraf/.legacy_scopes.XXXXXX)"
+  scope_list_file="$(mktemp .seraf/.scope_list.XXXXXX)"
+
+  cleanup_init_temps() {
+    rm -f "${tmp_kv:-}" "${tmp_scopes:-}" "${scope_list_file:-}"
+  }
+  trap cleanup_init_temps EXIT INT TERM
+
   : > "$tmp_kv"
   : > "$tmp_scopes"
+  : > "$scope_list_file"
 
-  local had_import=0
-  if [ -n "$import_path" ]; then
-    [ -f "$import_path" ] || { rm -f "$tmp_kv" "$tmp_scopes"; err "legacy config not found: $import_path"; return 1; }
-    had_import=1
+  if [ -z "$import_path" ]; then
+    if [ -f ./settings.cfg ]; then
+      import_path="./settings.cfg"
+    else
+      err "no legacy config provided and ./settings.cfg not found"
+      return 1
+    fi
+  fi
 
-    awk -v kvout="$tmp_kv" -v scopesout="$tmp_scopes" '
+  [ -f "$import_path" ] || { err "legacy config not found: $import_path"; return 1; }
+
+  awk -v kvout="$tmp_kv" -v scopesout="$tmp_scopes" '
       function trim(s) { gsub(/^[ \t\r\n]+/, "", s); gsub(/[ \t\r\n]+$/, "", s); return s }
       BEGIN { section="" }
       {
@@ -105,15 +119,16 @@ init_command() {
         if (line ~ /^[ \t]*\[/) {
           if (match(line, /^[ \t]*\[([^\]]+)\][ \t]*$/, m)) {
             section=trim(m[1])
-            if (section != "") print section >> scopesout
+            if (section != "" && !seen_scope[section]++) print section >> scopesout
             next
           } else {
-            printf("PARSE_ERROR\tinvalid section header\t%d\n", NR) >> kvout
+            printf("WARN\tinvalid section header\t%d\n", NR) >> kvout
+            section=""
             next
           }
         }
         if (section == "") {
-          printf("PARSE_ERROR\tkey/value outside section\t%d\n", NR) >> kvout
+          printf("WARN\tkey/value outside section\t%d\n", NR) >> kvout
           next
         }
         if (match(line, /^[ \t]*([^=]+)[ \t]*=[ \t]*(.*)$/, m)) {
@@ -121,33 +136,21 @@ init_command() {
           value=trim(m[2])
           printf("KV\t%s\t%s\t%s\n", section, key, value) >> kvout
         } else {
-          printf("PARSE_ERROR\tinvalid key/value\t%d\n", NR) >> kvout
+          printf("WARN\tinvalid key/value\t%d\n", NR) >> kvout
         }
       }
     ' "$import_path"
-  fi
 
-  local parse_errors
-  parse_errors="$(awk -F'\t' '$1=="PARSE_ERROR" {print $0}' "$tmp_kv" || true)"
-  if [ -n "$parse_errors" ]; then
-    printf '%s\n' "$parse_errors" | while IFS=$'\t' read -r _ msg line_no; do
-      err "legacy parse error at line ${line_no}: ${msg}"
-    done
-    rm -f "$tmp_kv" "$tmp_scopes"
+  awk -F'\t' '$1=="WARN"' "$tmp_kv" | while IFS=$'\t' read -r _ msg line_no; do
+    warn "legacy parse warning at line ${line_no}: ${msg}"
+  done
+
+  cp "$tmp_scopes" "$scope_list_file"
+
+  if [ ! -s "$scope_list_file" ]; then
+    err "no scopes found in legacy config: ${import_path}"
     return 1
   fi
-
-  local scope_list_file
-  scope_list_file="$(mktemp .seraf/.scope_list.XXXXXX)"
-  if [ "$had_import" -eq 1 ]; then
-    sort -u "$tmp_scopes" > "$scope_list_file"
-  else
-    : > "$scope_list_file"
-  fi
-
-  local unknown_warned
-  unknown_warned="$(mktemp .seraf/.unknown_warned.XXXXXX)"
-  : > "$unknown_warned"
 
   local unknowns
   unknowns="$(awk -F'\t' '$1=="KV" && $3!="source_dir" && $3!="target_dir" && $3!="servers" && $3!="rsync_opts" && $3!="backup" && $3!="backup_suffix" {print $3}' "$tmp_kv" | sort -u || true)"
@@ -158,10 +161,17 @@ init_command() {
     done <<< "$unknowns"
   fi
 
-  local default_scope="default"
-  if [ -s "$scope_list_file" ]; then
-    default_scope="$(head -n1 "$scope_list_file")"
-  fi
+  local default_scope
+  default_scope="$(head -n1 "$scope_list_file")"
+
+  local ssh_path rsync_path find_path
+  ssh_path="$(command -v ssh || true)"
+  rsync_path="$(command -v rsync || true)"
+  find_path="$(command -v find || true)"
+
+  [ -n "$ssh_path" ] || { err "required tool missing: ssh"; return 1; }
+  [ -n "$rsync_path" ] || { err "required tool missing: rsync"; return 1; }
+  [ -n "$find_path" ] || { err "required tool missing: find"; return 1; }
 
   local jq_path=""
   if command -v jq >/dev/null 2>&1; then
@@ -170,41 +180,41 @@ init_command() {
 
   local config
   config="[seraf]
-version=${SERAF_VERSION}
-project=${project_name}
-default_scope=${default_scope}
-state_dir=.seraf/state
-plans_dir=.seraf/plans
-runs_dir=.seraf/runs
-logs_dir=.seraf/logs
-lock_file=.seraf/seraf.lock
-require_plan_for_deploy=true
-fail_fast=true
-max_parallel=4
-shell=/usr/bin/bash
+version = ${SERAF_VERSION}
+project = ${project_name}
+default_scope = ${default_scope}
+state_dir = .seraf/state
+plans_dir = .seraf/plans
+runs_dir = .seraf/runs
+logs_dir = .seraf/logs
+lock_file = .seraf/seraf.lock
+require_plan_for_deploy = true
+fail_fast = true
+max_parallel = 4
+shell = /usr/bin/bash
 
 [tools]
-ssh=/usr/bin/ssh
-rsync=/usr/bin/rsync
-find=/usr/bin/find"
+ssh = ${ssh_path}
+rsync = ${rsync_path}
+find = ${find_path}"
   if [ -n "$jq_path" ]; then
     config+="
-jq=${jq_path}"
+jq = ${jq_path}"
   fi
 
   config+="
 
 [defaults]
-rsync_opts=-az
-backup=true
-backup_suffix=.bkp
-remote_mkdir=true
-dry_run_default=false
+rsync_opts = -az
+backup = true
+backup_suffix = .bkp
+remote_mkdir = true
+dry_run_default = false
 
 [routing]
-env_from_filename_prefix=s:sys,q:qa,p:production
-env_from_server_name_char_at=4
-env_from_server_name_char_map=s:sys,q:qa,p:production"
+env_from_filename_prefix = s:sys,q:qa,p:production
+env_from_server_name_char_at = 4
+env_from_server_name_char_map = s:sys,q:qa,p:production"
 
   local scope
   while IFS= read -r scope; do
@@ -218,32 +228,35 @@ env_from_server_name_char_map=s:sys,q:qa,p:production"
     backup_suffix="$(awk -F'\t' -v s="$scope" '$1=="KV" && $2==s && $3=="backup_suffix" {print $4; exit}' "$tmp_kv")"
 
     if [ -z "$source_dir" ] || [ -z "$target_dir" ] || [ -z "$servers" ]; then
-      rm -f "$tmp_kv" "$tmp_scopes" "$scope_list_file" "$unknown_warned"
       err "legacy section [${scope}] missing required keys (source_dir, target_dir, servers)"
       return 1
     fi
 
-    servers="$(printf '%s' "$servers" | sed 's/[[:space:]]*,[[:space:]]*/,/g; s/^[[:space:]]*//; s/[[:space:]]*$//; s/[[:space:]]\+/,/g')"
+    servers="$(printf '%s' "$servers" | sed -E 's/[[:space:]]*,[[:space:]]*/,/g; s/[[:space:]]+/,/g; s/,+/,/g; s/^,+//; s/,+$//')"
+
+    if [ -n "$backup" ]; then
+      backup="$(printf '%s' "$backup" | tr '[:upper:]' '[:lower:]')"
+    fi
 
     config+="
 
 [scope \"${scope}\"]
-enabled=true
-source_dir=${source_dir}
-target_dir=${target_dir}
-servers=${servers}
-discovery=mtime_since_last_success"
+enabled = true
+source_dir = ${source_dir}
+target_dir = ${target_dir}
+servers = ${servers}
+discovery = mtime_since_last_success"
     if [ -n "$rsync_opts" ]; then
       config+="
-rsync_opts=${rsync_opts}"
+rsync_opts = ${rsync_opts}"
     fi
     if [ -n "$backup" ]; then
       config+="
-backup=${backup}"
+backup = ${backup}"
     fi
     if [ -n "$backup_suffix" ]; then
       config+="
-backup_suffix=${backup_suffix}"
+backup_suffix = ${backup_suffix}"
     fi
   done < "$scope_list_file"
 
@@ -272,8 +285,6 @@ backup_suffix=${backup_suffix}"
 }"
     atomic_write ".seraf/state/${scope}.json" "$state_json"
   done < "$scope_list_file"
-
-  rm -f "$tmp_kv" "$tmp_scopes" "$scope_list_file" "$unknown_warned"
 
   printf 'Initialized SERAF .seraf workspace\n'
 }
