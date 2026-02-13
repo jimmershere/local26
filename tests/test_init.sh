@@ -13,11 +13,13 @@ source_dir = /srv/source
  target_dir=/srv/target
 servers = app1, app2 ,app3
 rsync_opts = -az --delete
+backup = TRue
 
 [api]
 source_dir=/srv/api-src
 target_dir=/srv/api-dst
 servers=api1 api2
+backup=maybe
 
 [web]
 source_dir=/ignored
@@ -28,9 +30,12 @@ CFG
 mkdir -p "${tmpdir}/state"
 touch -d '2024-02-03 04:05:06 UTC' "${tmpdir}/state/web.last"
 
+init_out="$(mktemp "${tmpdir}/seraf-test-out.XXXXXX")"
+init_err="$(mktemp "${tmpdir}/seraf-test-err.XXXXXX")"
+
 (
   cd "$tmpdir"
-  "$repo_root/bin/seraf" init --force --project demo >"${tmpdir}/seraf-test-out.txt"
+  "$repo_root/bin/seraf" init --force --project demo >"$init_out" 2>"$init_err"
 )
 
 test -f "${tmpdir}/.seraf/config.ini"
@@ -38,6 +43,8 @@ grep -q '^default_scope = web$' "${tmpdir}/.seraf/config.ini"
 grep -q '^\[scope "web"\]' "${tmpdir}/.seraf/config.ini"
 grep -q '^\[scope "api"\]' "${tmpdir}/.seraf/config.ini"
 grep -q '^servers = app1,app2,app3$' "${tmpdir}/.seraf/config.ini"
+grep -q '^backup = true$' "${tmpdir}/.seraf/config.ini"
+grep -q "legacy section \[api\] has invalid backup value 'maybe'; expected true/false, ignoring" "$init_err"
 
 web_line="$(grep -n '^\[scope "web"\]' "${tmpdir}/.seraf/config.ini" | cut -d: -f1)"
 api_line="$(grep -n '^\[scope "api"\]' "${tmpdir}/.seraf/config.ini" | cut -d: -f1)"
@@ -48,6 +55,12 @@ fi
 
 if grep -q '^source_dir = /ignored$' "${tmpdir}/.seraf/config.ini"; then
   echo "duplicate scope should keep first declaration" >&2
+  exit 1
+fi
+
+api_scope_block="$(sed -n '/^\[scope "api"\]/,/^\[scope "/p' "${tmpdir}/.seraf/config.ini")"
+if printf '%s\n' "$api_scope_block" | grep -q '^backup = '; then
+  echo "api scope should not include invalid legacy backup value" >&2
   exit 1
 fi
 
