@@ -58,11 +58,7 @@ if grep -q '^source_dir = /ignored$' "${tmpdir}/.seraf/config.ini"; then
   exit 1
 fi
 
-api_scope_block="$(awk '
-  /^\[scope "api"\]/ { in_api=1 }
-  /^\[scope "/ && in_api && $0 != "[scope \"api\"]" { exit }
-  in_api { print }
-' "${tmpdir}/.seraf/config.ini")"
+api_scope_block="$(sed -n '/^\[scope "api"\]/,/^\[scope "/p' "${tmpdir}/.seraf/config.ini")"
 if printf '%s\n' "$api_scope_block" | grep -q '^backup = '; then
   echo "api scope should not include invalid legacy backup value" >&2
   exit 1
