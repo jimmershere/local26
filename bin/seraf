@@ -306,6 +306,44 @@ backup_suffix = ${backup_suffix}"
 }
 
 plan_command() {
+  local only_scope=""
+  local output_format="json"
+  local print_stdout=0
+  local ci_mode=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --scope)
+        [ "$#" -ge 2 ] || { err "--scope requires a value"; return 2; }
+        only_scope="$2"
+        shift 2
+        ;;
+      --format)
+        [ "$#" -ge 2 ] || { err "--format requires a value"; return 2; }
+        output_format="$2"
+        shift 2
+        ;;
+      --stdout)
+        print_stdout=1
+        shift
+        ;;
+      --ci)
+        ci_mode=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      *)
+        err "unknown option: $1"
+        return 2
+        ;;
+    esac
+  done
+
+  [ "$output_format" = "json" ] || { err "unsupported format: ${output_format}"; return 2; }
+
   local config_file=".seraf/config.ini"
   local lock_file=".seraf/seraf.lock"
 
@@ -326,12 +364,12 @@ plan_command() {
   scope_list_file="$(mktemp .seraf/.scope_list.XXXXXX)"
 
   cleanup_plan_temps() {
-    rm -f "${tmp_scope_kv:-}" "${scope_list_file:-}" "${tmp_ref:-}" "${tmp_files:-}"
+    rm -f "${tmp_scope_kv:-}" "${scope_list_file:-}" "${tmp_ref:-}" "${tmp_files:-}" "${tmp_all:-}" "${tmp_dirs:-}"
   }
   trap cleanup_plan_temps EXIT INT TERM
 
   awk -v out="$tmp_scope_kv" '
-    function trim(s) { gsub(/^[ \t\r\n]+/, "", s); gsub(/[ \t\r\n]+$/, "", s); return s }
+    function trim(s) { gsub(/^[[:space:]]+/, "", s); gsub(/[[:space:]]+$/, "", s); return s }
     BEGIN { section=""; scope="" }
     {
       line=$0
@@ -358,18 +396,66 @@ plan_command() {
     }
   ' "$config_file"
 
-  awk -F'\t' 'NF==1 && !seen[$1]++ {print $1}' "$tmp_scope_kv" | LC_ALL=C sort > "$scope_list_file"
+  awk -F'\t' 'NF==1 && !seen[$1]++ {print $1}' "$tmp_scope_kv" > "$scope_list_file"
+
+  local routing_filename_prefix routing_server_char_at routing_server_char_map
+  local default_rsync_opts default_backup default_backup_suffix default_remote_mkdir
+  routing_filename_prefix="$(awk '
+    function trim(s) { gsub(/^[[:space:]]+/, "", s); gsub(/[[:space:]]+$/, "", s); return s }
+    /^[ \t]*\[routing\][ \t]*$/ { insec=1; next }
+    /^[ \t]*\[/ { insec=0 }
+    insec && $0 ~ /^[ \t]*env_from_filename_prefix[ \t]*=/ { sub(/^[^=]*=/, "", $0); print trim($0); exit }
+  ' "$config_file")"
+  routing_server_char_at="$(awk '
+    function trim(s) { gsub(/^[[:space:]]+/, "", s); gsub(/[[:space:]]+$/, "", s); return s }
+    /^[ \t]*\[routing\][ \t]*$/ { insec=1; next }
+    /^[ \t]*\[/ { insec=0 }
+    insec && $0 ~ /^[ \t]*env_from_server_name_char_at[ \t]*=/ { sub(/^[^=]*=/, "", $0); print trim($0); exit }
+  ' "$config_file")"
+  routing_server_char_map="$(awk '
+    function trim(s) { gsub(/^[[:space:]]+/, "", s); gsub(/[[:space:]]+$/, "", s); return s }
+    /^[ \t]*\[routing\][ \t]*$/ { insec=1; next }
+    /^[ \t]*\[/ { insec=0 }
+    insec && $0 ~ /^[ \t]*env_from_server_name_char_map[ \t]*=/ { sub(/^[^=]*=/, "", $0); print trim($0); exit }
+  ' "$config_file")"
+  default_rsync_opts="$(awk '
+    function trim(s) { gsub(/^[[:space:]]+/, "", s); gsub(/[[:space:]]+$/, "", s); return s }
+    /^[ \t]*\[defaults\][ \t]*$/ { insec=1; next }
+    /^[ \t]*\[/ { insec=0 }
+    insec && $0 ~ /^[ \t]*rsync_opts[ \t]*=/ { sub(/^[^=]*=/, "", $0); print trim($0); exit }
+  ' "$config_file")"
+  default_backup="$(awk '
+    function trim(s) { gsub(/^[[:space:]]+/, "", s); gsub(/[[:space:]]+$/, "", s); return s }
+    /^[ \t]*\[defaults\][ \t]*$/ { insec=1; next }
+    /^[ \t]*\[/ { insec=0 }
+    insec && $0 ~ /^[ \t]*backup[ \t]*=/ { sub(/^[^=]*=/, "", $0); print trim($0); exit }
+  ' "$config_file")"
+  default_backup_suffix="$(awk '
+    function trim(s) { gsub(/^[[:space:]]+/, "", s); gsub(/[[:space:]]+$/, "", s); return s }
+    /^[ \t]*\[defaults\][ \t]*$/ { insec=1; next }
+    /^[ \t]*\[/ { insec=0 }
+    insec && $0 ~ /^[ \t]*backup_suffix[ \t]*=/ { sub(/^[^=]*=/, "", $0); print trim($0); exit }
+  ' "$config_file")"
+  default_remote_mkdir="$(awk '
+    function trim(s) { gsub(/^[[:space:]]+/, "", s); gsub(/[[:space:]]+$/, "", s); return s }
+    /^[ \t]*\[defaults\][ \t]*$/ { insec=1; next }
+    /^[ \t]*\[/ { insec=0 }
+    insec && $0 ~ /^[ \t]*remote_mkdir[ \t]*=/ { sub(/^[^=]*=/, "", $0); print trim($0); exit }
+  ' "$config_file")"
 
   local created_at plan_json
   created_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  plan_json="{\"schema\":\"seraf.plan.v0.1\",\"plan_id\":\"${plan_id}\",\"created_at\":\"${created_at}\",\"config_fingerprint\":\"${config_fingerprint}\",\"scopes\":["
+  plan_json="{\"seraf_version\":\"${SERAF_VERSION}\",\"kind\":\"plan\",\"mode\":\"deploy\",\"schema\":\"seraf.plan.v0.1\",\"plan_id\":\"${plan_id}\",\"created_at\":\"${created_at}\",\"config_fingerprint\":\"sha256:${config_fingerprint}\",\"scopes\":["
 
   local first_scope=1
   local scope
   while IFS= read -r scope; do
     [ -n "$scope" ] || continue
+    if [ -n "$only_scope" ] && [ "$scope" != "$only_scope" ]; then
+      continue
+    fi
 
-    local enabled source_dir target_dir servers_csv discovery
+    local enabled source_dir target_dir servers_csv discovery rsync_opts backup backup_suffix remote_mkdir
     enabled="$(awk -F'\t' -v s="$scope" '$1==s && $2=="enabled" {print $3; exit}' "$tmp_scope_kv")"
     [ -n "$enabled" ] || enabled="true"
     [ "$enabled" = "true" ] || continue
@@ -378,26 +464,42 @@ plan_command() {
     target_dir="$(awk -F'\t' -v s="$scope" '$1==s && $2=="target_dir" {print $3; exit}' "$tmp_scope_kv")"
     servers_csv="$(awk -F'\t' -v s="$scope" '$1==s && $2=="servers" {print $3; exit}' "$tmp_scope_kv")"
     discovery="$(awk -F'\t' -v s="$scope" '$1==s && $2=="discovery" {print $3; exit}' "$tmp_scope_kv")"
+    rsync_opts="$(awk -F'\t' -v s="$scope" '$1==s && $2=="rsync_opts" {print $3; exit}' "$tmp_scope_kv")"
+    backup="$(awk -F'\t' -v s="$scope" '$1==s && $2=="backup" {print $3; exit}' "$tmp_scope_kv")"
+    backup_suffix="$(awk -F'\t' -v s="$scope" '$1==s && $2=="backup_suffix" {print $3; exit}' "$tmp_scope_kv")"
+    remote_mkdir="$(awk -F'\t' -v s="$scope" '$1==s && $2=="remote_mkdir" {print $3; exit}' "$tmp_scope_kv")"
+
+    [ -n "$rsync_opts" ] || rsync_opts="$default_rsync_opts"
+    [ -n "$backup" ] || backup="$default_backup"
+    [ -n "$backup_suffix" ] || backup_suffix="$default_backup_suffix"
+    [ -n "$remote_mkdir" ] || remote_mkdir="$default_remote_mkdir"
 
     [ -n "$source_dir" ] || continue
     [ -n "$target_dir" ] || continue
     [ -n "$servers_csv" ] || continue
     [ "$discovery" = "mtime_since_last_success" ] || continue
 
-    local state_file state_last_success
+    local state_file state_last_success since_json
     state_file=".seraf/state/${scope}.json"
     [ -f "$state_file" ] || { err "missing state: ${state_file}"; return 1; }
     state_last_success="$(sed -n 's/.*"last_success"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$state_file" | head -n1)"
+    since_json="null"
+    [ -n "$state_last_success" ] && since_json="\"$(json_escape "$state_last_success")\""
 
-    local tmp_ref tmp_files
+    local tmp_ref tmp_files tmp_all
     tmp_ref="$(mktemp .seraf/.ref.XXXXXX)"
     tmp_files="$(mktemp .seraf/.files.XXXXXX)"
+    tmp_all="$(mktemp .seraf/.all.XXXXXX)"
+
+    find "$source_dir" -type f -print | LC_ALL=C sort > "$tmp_all"
+    local files_found
+    files_found="$(wc -l < "$tmp_all" | tr -d ' ')"
 
     if [ -n "$state_last_success" ]; then
       touch -d "$state_last_success" "$tmp_ref"
       find "$source_dir" -type f -newer "$tmp_ref" -print | LC_ALL=C sort > "$tmp_files"
     else
-      find "$source_dir" -type f -print | LC_ALL=C sort > "$tmp_files"
+      cp "$tmp_all" "$tmp_files"
     fi
 
     local servers_json="" first_server=1 server
@@ -408,41 +510,97 @@ plan_command() {
       if [ "$first_server" -eq 1 ]; then
         first_server=0
       else
-        servers_json+=","
+        servers_json+="," 
       fi
       servers_json+="\"$(json_escape "$server")\""
     done
-    servers_json="[$(printf '%s' "$servers_json" | tr ',' '\n' | LC_ALL=C sort | paste -sd, -)]"
+    servers_json="[${servers_json}]"
 
-    local files_json="" first_file=1 f rel
+    local files_json="" first_file=1 f rel selected_count=0
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       rel="${f#$source_dir/}"
-      if [ "$f" = "$rel" ]; then
-        rel="$(basename "$f")"
-      fi
+      [ "$f" = "$rel" ] && rel="$(basename "$f")"
       if [ "$first_file" -eq 1 ]; then
         first_file=0
       else
-        files_json+=","
+        files_json+="," 
       fi
       files_json+="\"$(json_escape "$rel")\""
+      selected_count=$((selected_count + 1))
     done < "$tmp_files"
+
+    local steps_json="" step_n=1 mkdir_steps=0 rsync_steps=0 rollbackable_steps=0
+    for server in "${servers_arr[@]}"; do
+      server="$(printf '%s' "$server" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+      [ -n "$server" ] || continue
+
+      if [ "$remote_mkdir" = "true" ]; then
+        local tmp_dirs
+        tmp_dirs="$(mktemp .seraf/.dirs.XXXXXX)"
+        while IFS= read -r f; do
+          [ -n "$f" ] || continue
+          rel="${f#$source_dir/}"
+          [ "$f" = "$rel" ] && rel="$(basename "$f")"
+          dirname "${target_dir%/}/${rel}"
+        done < "$tmp_files" | LC_ALL=C sort -u > "$tmp_dirs"
+
+        while IFS= read -r remote_dir; do
+          [ -n "$remote_dir" ] || continue
+          local sid cmd
+          sid="scope:${scope}:$(printf '%04d' "$step_n")"
+          cmd="ssh $(printf '%q' "$server") mkdir -p $(printf '%q' "$remote_dir")"
+          [ -z "$steps_json" ] || steps_json+="," 
+          steps_json+="{\"id\":\"$(json_escape "$sid")\",\"type\":\"mkdir\",\"host\":\"$(json_escape "$server")\",\"cmd\":\"$(json_escape "$cmd")\",\"rollback\":null,\"checks\":{\"requires\":[\"ssh\"]}}"
+          step_n=$((step_n + 1))
+          mkdir_steps=$((mkdir_steps + 1))
+        done < "$tmp_dirs"
+        rm -f "$tmp_dirs"
+      fi
+
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        rel="${f#$source_dir/}"
+        [ "$f" = "$rel" ] && rel="$(basename "$f")"
+        local local_path remote_path cmd sid rollback_json
+        local_path="$f"
+        remote_path="${target_dir%/}/${rel}"
+        cmd="rsync ${rsync_opts} $(printf '%q' "$local_path") $(printf '%q' "${server}:${remote_path}")"
+        rollback_json="null"
+        if [ "$backup" = "true" ]; then
+          rollback_json="{\"type\":\"restore\",\"cmd\":\"$(json_escape "ssh $(printf '%q' "$server") cp -a $(printf '%q' "${remote_path}${backup_suffix}") $(printf '%q' "$remote_path")")\"}"
+          rollbackable_steps=$((rollbackable_steps + 1))
+        fi
+        sid="scope:${scope}:$(printf '%04d' "$step_n")"
+        [ -z "$steps_json" ] || steps_json+="," 
+        steps_json+="{\"id\":\"$(json_escape "$sid")\",\"type\":\"rsync\",\"host\":\"$(json_escape "$server")\",\"cmd\":\"$(json_escape "$cmd")\",\"local_path\":\"$(json_escape "$local_path")\",\"remote_path\":\"$(json_escape "$remote_path")\",\"rollback\":${rollback_json},\"checks\":{\"requires\":[\"ssh\",\"rsync\"]}}"
+        step_n=$((step_n + 1))
+        rsync_steps=$((rsync_steps + 1))
+      done < "$tmp_files"
+    done
 
     if [ "$first_scope" -eq 1 ]; then
       first_scope=0
     else
-      plan_json+=","
+      plan_json+="," 
     fi
 
-    plan_json+="{\"scope\":\"$(json_escape "$scope")\",\"source_dir\":\"$(json_escape "$source_dir")\",\"target_dir\":\"$(json_escape "$target_dir")\",\"discovery\":\"${discovery}\",\"servers\":${servers_json},\"files\":[${files_json}]}"
-    rm -f "$tmp_ref" "$tmp_files"
+    plan_json+="{\"scope\":\"$(json_escape "$scope")\",\"inputs\":{\"source_dir\":\"$(json_escape "$source_dir")\",\"target_dir\":\"$(json_escape "$target_dir")\",\"servers\":${servers_json},\"rsync_opts\":\"$(json_escape "$rsync_opts")\",\"backup\":$([ "$backup" = "true" ] && printf true || printf false),\"backup_suffix\":\"$(json_escape "$backup_suffix")\",\"remote_mkdir\":$([ "$remote_mkdir" = "true" ] && printf true || printf false)},\"discovery\":{\"strategy\":\"$(json_escape "$discovery")\",\"since\":${since_json},\"files_found\":${files_found},\"files_selected\":${selected_count}},\"routing\":{\"env_from_filename_prefix\":\"$(json_escape "$routing_filename_prefix")\",\"env_from_server_name_char_at\":$([ -n "$routing_server_char_at" ] && printf '%s' "$routing_server_char_at" || printf null),\"env_from_server_name_char_map\":\"$(json_escape "$routing_server_char_map")\"},\"steps\":[${steps_json}],\"summary\":{\"counts\":{\"mkdir_steps\":${mkdir_steps},\"rsync_steps\":${rsync_steps},\"rollbackable_steps\":${rollbackable_steps},\"warnings\":[]}}}"
+
+    rm -f "$tmp_ref" "$tmp_files" "$tmp_all"
   done < "$scope_list_file"
 
-  plan_json+="],\"analysis\":{\"ai\":{\"enabled\":false}}}"
+  plan_json+="],\"analysis\":{\"ai\":{\"enabled\":false,\"provider\":null,\"model\":null,\"generated_at\":null,\"risk\":{\"score\":null,\"level\":null,\"reasons\":[]},\"predicted_failures\":[],\"policy\":{\"advisory_only\":true,\"may_block_deploy\":false,\"requires_human_ack_for_high_risk\":true}}}}"
 
-  atomic_write ".seraf/plans/${plan_id}.plan.json" "$plan_json"
-  printf '%s\n' "$plan_id"
+  if [ "$ci_mode" -ne 1 ]; then
+    atomic_write ".seraf/plans/${plan_id}.plan.json" "$plan_json"
+  fi
+
+  if [ "$print_stdout" -eq 1 ] || [ "$ci_mode" -eq 1 ]; then
+    printf '%s\n' "$plan_json"
+  else
+    printf '%s\n' "$plan_id"
+  fi
 }
 
 main() {

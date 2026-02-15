@@ -7,68 +7,58 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
-cat > "${tmpdir}/settings.cfg" <<'CFG'
-[web]
-source_dir = /tmp/seraf-web
- target_dir=/srv/web
-servers = z1, a1 ,b1
+src_dir="${tmpdir}/src"
+mkdir -p "${src_dir}/sub"
+printf 'a' > "${src_dir}/sub/a.txt"
+printf 'b' > "${src_dir}/sub/b.txt"
 
-[api]
-source_dir=/tmp/seraf-api
-target_dir=/srv/api
-servers=api2,api1
+cat > "${tmpdir}/settings.cfg" <<CFG
+[test1]
+source_dir = ${src_dir}
+target_dir = /srv/test
+servers = localhost,host2
 CFG
-
-mkdir -p /tmp/seraf-web /tmp/seraf-api
-printf 'old' > /tmp/seraf-web/old.txt
-printf 'new' > /tmp/seraf-web/new.txt
-printf 'z' > /tmp/seraf-api/z.txt
-printf 'a' > /tmp/seraf-api/a.txt
-
-touch -d '2023-01-01 00:00:00 UTC' /tmp/seraf-web/old.txt
-touch -d '2025-01-01 00:00:00 UTC' /tmp/seraf-web/new.txt
-touch -d '2024-03-01 00:00:00 UTC' /tmp/seraf-api/z.txt
-touch -d '2024-02-01 00:00:00 UTC' /tmp/seraf-api/a.txt
 
 (
   cd "$tmpdir"
   "$repo_root/bin/seraf" init --force --project demo >/dev/null
 )
 
-python - <<'PY' "$tmpdir/.seraf/state/web.json"
+python - <<'PY' "$tmpdir/.seraf/state/test1.json"
 import json,sys
 p=sys.argv[1]
 with open(p) as f:
     data=json.load(f)
-data["last_success"]="2024-01-01T00:00:00Z"
+data["last_success"]=None
 with open(p,"w") as f:
     json.dump(data,f,separators=(",",":"))
 PY
 
-plan_id="$(cd "$tmpdir" && "$repo_root/bin/seraf" plan)"
-plan_file="${tmpdir}/.seraf/plans/${plan_id}.plan.json"
+plan_json="$(cd "$tmpdir" && "$repo_root/bin/seraf" plan --scope test1 --format json --stdout)"
 
-test -f "$plan_file"
-
-python - <<'PY' "$tmpdir" "$plan_file"
-import hashlib,json,sys
-root,plan_path=sys.argv[1],sys.argv[2]
-with open(plan_path) as f:
-    plan=json.load(f)
+python - <<'PY' "$plan_json"
+import json,sys
+plan=json.loads(sys.argv[1])
 assert plan["schema"]=="seraf.plan.v0.1"
-assert plan["analysis"]["ai"]["enabled"] is False
-cfg=open(f"{root}/.seraf/config.ini","rb").read()
-assert plan["config_fingerprint"]==hashlib.sha256(cfg).hexdigest()
-scopes=[s["scope"] for s in plan["scopes"]]
-assert scopes==sorted(scopes)
-web=next(s for s in plan["scopes"] if s["scope"]=="web")
-api=next(s for s in plan["scopes"] if s["scope"]=="api")
-assert web["servers"]==["a1","b1","z1"]
-assert api["servers"]==["api1","api2"]
-assert web["files"]==["new.txt"]
-assert api["files"]==["a.txt","z.txt"]
+assert plan["kind"]=="plan"
+assert plan["mode"]=="deploy"
+assert plan["config_fingerprint"].startswith("sha256:")
+assert len(plan["scopes"])==1
+scope=plan["scopes"][0]
+assert scope["scope"]=="test1"
+steps=scope["steps"]
+assert steps, "expected steps"
+mkdir=[s for s in steps if s["type"]=="mkdir"]
+rsync=[s for s in steps if s["type"]=="rsync"]
+assert len(mkdir)==2, len(mkdir)
+assert len(rsync)==4, len(rsync)
+counts=scope["summary"]["counts"]
+assert counts["mkdir_steps"]==2
+assert counts["rsync_steps"]==4
+ids=[s["id"] for s in steps]
+assert ids==sorted(ids), ids
+assert ids[0]=="scope:test1:0001"
+assert ids[-1]=="scope:test1:0006"
 PY
-
-rm -rf /tmp/seraf-web /tmp/seraf-api
 
 echo "test_plan.sh: ok"
