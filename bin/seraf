@@ -8,6 +8,7 @@ usage() {
   cat <<'USAGE'
 Usage:
   seraf init [--import PATH] [--force] [--project NAME]
+  seraf plan
   seraf help
 USAGE
 }
@@ -33,6 +34,10 @@ atomic_write() {
   tmp="$(mktemp "${dir}/.tmp.XXXXXX")"
   printf '%s' "$content" > "$tmp"
   mv -f "$tmp" "$target"
+}
+
+json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
 init_command() {
@@ -300,12 +305,156 @@ backup_suffix = ${backup_suffix}"
   printf 'Initialized SERAF .seraf workspace\n'
 }
 
+plan_command() {
+  local config_file=".seraf/config.ini"
+  local lock_file=".seraf/seraf.lock"
+
+  [ -f "$config_file" ] || { err "missing config: ${config_file}"; return 1; }
+
+  mkdir -p .seraf/plans
+  : > "$lock_file"
+  exec 9>>"$lock_file"
+  flock 9
+
+  local plan_ts config_fingerprint plan_id
+  plan_ts="$(date -u +"%Y%m%dT%H%M%SZ")"
+  config_fingerprint="$(sha256sum "$config_file" | awk '{print $1}')"
+  plan_id="${plan_ts}-${config_fingerprint:0:8}"
+
+  local tmp_scope_kv scope_list_file
+  tmp_scope_kv="$(mktemp .seraf/.scope_kv.XXXXXX)"
+  scope_list_file="$(mktemp .seraf/.scope_list.XXXXXX)"
+
+  cleanup_plan_temps() {
+    rm -f "${tmp_scope_kv:-}" "${scope_list_file:-}" "${tmp_ref:-}" "${tmp_files:-}"
+  }
+  trap cleanup_plan_temps EXIT INT TERM
+
+  awk -v out="$tmp_scope_kv" '
+    function trim(s) { gsub(/^[ \t\r\n]+/, "", s); gsub(/[ \t\r\n]+$/, "", s); return s }
+    BEGIN { section=""; scope="" }
+    {
+      line=$0
+      sub(/\r$/, "", line)
+      if (line ~ /^[ \t]*$/) next
+      if (line ~ /^[ \t]*[;#]/) next
+      if (match(line, /^[ \t]*\[scope "([^"]+)"\][ \t]*$/, m)) {
+        section="scope"
+        scope=m[1]
+        print scope >> out
+        next
+      }
+      if (line ~ /^[ \t]*\[/) {
+        section=""
+        scope=""
+        next
+      }
+      if (section != "scope") next
+      if (match(line, /^[ \t]*([^=]+)[ \t]*=[ \t]*(.*)$/, m)) {
+        key=trim(m[1])
+        value=trim(m[2])
+        printf("%s\t%s\t%s\n", scope, key, value) >> out
+      }
+    }
+  ' "$config_file"
+
+  awk -F'\t' 'NF==1 && !seen[$1]++ {print $1}' "$tmp_scope_kv" | LC_ALL=C sort > "$scope_list_file"
+
+  local created_at plan_json
+  created_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  plan_json="{\"schema\":\"seraf.plan.v0.1\",\"plan_id\":\"${plan_id}\",\"created_at\":\"${created_at}\",\"config_fingerprint\":\"${config_fingerprint}\",\"scopes\":["
+
+  local first_scope=1
+  local scope
+  while IFS= read -r scope; do
+    [ -n "$scope" ] || continue
+
+    local enabled source_dir target_dir servers_csv discovery
+    enabled="$(awk -F'\t' -v s="$scope" '$1==s && $2=="enabled" {print $3; exit}' "$tmp_scope_kv")"
+    [ -n "$enabled" ] || enabled="true"
+    [ "$enabled" = "true" ] || continue
+
+    source_dir="$(awk -F'\t' -v s="$scope" '$1==s && $2=="source_dir" {print $3; exit}' "$tmp_scope_kv")"
+    target_dir="$(awk -F'\t' -v s="$scope" '$1==s && $2=="target_dir" {print $3; exit}' "$tmp_scope_kv")"
+    servers_csv="$(awk -F'\t' -v s="$scope" '$1==s && $2=="servers" {print $3; exit}' "$tmp_scope_kv")"
+    discovery="$(awk -F'\t' -v s="$scope" '$1==s && $2=="discovery" {print $3; exit}' "$tmp_scope_kv")"
+
+    [ -n "$source_dir" ] || continue
+    [ -n "$target_dir" ] || continue
+    [ -n "$servers_csv" ] || continue
+    [ "$discovery" = "mtime_since_last_success" ] || continue
+
+    local state_file state_last_success
+    state_file=".seraf/state/${scope}.json"
+    [ -f "$state_file" ] || { err "missing state: ${state_file}"; return 1; }
+    state_last_success="$(sed -n 's/.*"last_success"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$state_file" | head -n1)"
+
+    local tmp_ref tmp_files
+    tmp_ref="$(mktemp .seraf/.ref.XXXXXX)"
+    tmp_files="$(mktemp .seraf/.files.XXXXXX)"
+
+    if [ -n "$state_last_success" ]; then
+      touch -d "$state_last_success" "$tmp_ref"
+      find "$source_dir" -type f -newer "$tmp_ref" -print | LC_ALL=C sort > "$tmp_files"
+    else
+      find "$source_dir" -type f -print | LC_ALL=C sort > "$tmp_files"
+    fi
+
+    local servers_json="" first_server=1 server
+    IFS=',' read -r -a servers_arr <<< "$servers_csv"
+    for server in "${servers_arr[@]}"; do
+      server="$(printf '%s' "$server" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+      [ -n "$server" ] || continue
+      if [ "$first_server" -eq 1 ]; then
+        first_server=0
+      else
+        servers_json+=","
+      fi
+      servers_json+="\"$(json_escape "$server")\""
+    done
+    servers_json="[$(printf '%s' "$servers_json" | tr ',' '\n' | LC_ALL=C sort | paste -sd, -)]"
+
+    local files_json="" first_file=1 f rel
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      rel="${f#$source_dir/}"
+      if [ "$f" = "$rel" ]; then
+        rel="$(basename "$f")"
+      fi
+      if [ "$first_file" -eq 1 ]; then
+        first_file=0
+      else
+        files_json+=","
+      fi
+      files_json+="\"$(json_escape "$rel")\""
+    done < "$tmp_files"
+
+    if [ "$first_scope" -eq 1 ]; then
+      first_scope=0
+    else
+      plan_json+=","
+    fi
+
+    plan_json+="{\"scope\":\"$(json_escape "$scope")\",\"source_dir\":\"$(json_escape "$source_dir")\",\"target_dir\":\"$(json_escape "$target_dir")\",\"discovery\":\"${discovery}\",\"servers\":${servers_json},\"files\":[${files_json}]}"
+    rm -f "$tmp_ref" "$tmp_files"
+  done < "$scope_list_file"
+
+  plan_json+="],\"analysis\":{\"ai\":{\"enabled\":false}}}"
+
+  atomic_write ".seraf/plans/${plan_id}.plan.json" "$plan_json"
+  printf '%s\n' "$plan_id"
+}
+
 main() {
   local cmd="${1:-help}"
   case "$cmd" in
     init)
       shift
       init_command "$@"
+      ;;
+    plan)
+      shift
+      plan_command "$@"
       ;;
     help|-h|--help)
       usage
