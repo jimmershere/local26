@@ -474,6 +474,12 @@ plan_command() {
     [ -n "$backup_suffix" ] || backup_suffix="$default_backup_suffix"
     [ -n "$remote_mkdir" ] || remote_mkdir="$default_remote_mkdir"
 
+    backup="$(printf '%s' "$backup" | tr '[:upper:]' '[:lower:]')"
+    case "$backup" in
+      true|false) ;;
+      *) backup="false" ;;
+    esac
+
     [ -n "$source_dir" ] || continue
     [ -n "$target_dir" ] || continue
     [ -n "$servers_csv" ] || continue
@@ -562,13 +568,20 @@ plan_command() {
         [ -n "$f" ] || continue
         rel="${f#$source_dir/}"
         [ "$f" = "$rel" ] && rel="$(basename "$f")"
-        local local_path remote_path cmd sid rollback_json
+        local local_path remote_path cmd sid rollback_json rollback_cmd remote_backup_escaped remote_path_escaped
         local_path="$f"
         remote_path="${target_dir%/}/${rel}"
-        cmd="rsync ${rsync_opts} $(printf '%q' "$local_path") $(printf '%q' "${server}:${remote_path}")"
+        cmd="rsync ${rsync_opts}"
+        if [ "$backup" = "true" ]; then
+          cmd+=" --backup --suffix=$(printf '%q' "$backup_suffix")"
+        fi
+        cmd+=" -- $(printf '%q' "$local_path") $(printf '%q' "${server}:${remote_path}")"
         rollback_json="null"
         if [ "$backup" = "true" ]; then
-          rollback_json="{\"type\":\"restore\",\"cmd\":\"$(json_escape "ssh $(printf '%q' "$server") cp -a $(printf '%q' "${remote_path}${backup_suffix}") $(printf '%q' "$remote_path")")\"}"
+          remote_backup_escaped="$(printf '%s' "${remote_path}${backup_suffix}" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+          remote_path_escaped="$(printf '%s' "$remote_path" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+          rollback_cmd="ssh $(printf '%q' "$server") \"cp -a -- \\\"${remote_backup_escaped}\\\" \\\"${remote_path_escaped}\\\"\""
+          rollback_json="{\"type\":\"restore\",\"cmd\":\"$(json_escape "$rollback_cmd")\"}"
           rollbackable_steps=$((rollbackable_steps + 1))
         fi
         sid="scope:${scope}:$(printf '%04d' "$step_n")"
