@@ -8,9 +8,10 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 src_dir="${tmpdir}/src"
-mkdir -p "${src_dir}/sub"
+mkdir -p "${src_dir}/sub/nested"
 printf 'a' > "${src_dir}/sub/a.txt"
 printf 'b' > "${src_dir}/sub/b.txt"
+printf 'c' > "${src_dir}/sub/nested/hello world.txt"
 
 cat > "${tmpdir}/settings.cfg" <<CFG
 [test1]
@@ -59,7 +60,17 @@ scope=scopes["test1"]
 steps=scope["steps"]
 assert steps, "expected steps for test1"
 rsync=[s for s in steps if s["type"]=="rsync"]
-assert len(rsync)==2, len(rsync)
+assert len(rsync)==3, len(rsync)
+mkdir_steps=[s for s in steps if s["type"]=="mkdir"]
+assert mkdir_steps, "expected mkdir steps for test1"
+for step in mkdir_steps:
+    assert step["cmd"].startswith('ssh "localhost" "mkdir -p -- '), step["cmd"]
+    assert '\\"' in step["cmd"], step["cmd"]
+
+space_steps=[s for s in rsync if "hello world.txt" in s["local_path"]]
+assert len(space_steps)==1, len(space_steps)
+space_cmd=space_steps[0]["cmd"]
+assert '"' + space_steps[0]["local_path"] + '"' in space_cmd, space_cmd
 for step in rsync:
     assert " --backup " in step["cmd"], step["cmd"]
     assert "--suffix=.bkp" in step["cmd"], step["cmd"]
@@ -72,7 +83,7 @@ scope2=scopes["test2"]
 steps2=scope2["steps"]
 assert steps2, "expected steps for test2"
 rsync2=[s for s in steps2 if s["type"]=="rsync"]
-assert len(rsync2)==2, len(rsync2)
+assert len(rsync2)==3, len(rsync2)
 for step in rsync2:
     assert "--backup" not in step["cmd"], step["cmd"]
     assert "--suffix=" not in step["cmd"], step["cmd"]
