@@ -40,6 +40,10 @@ json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
+shell_dquote_escape() {
+  printf '%s' "$1" | sed -e 's/[\\$`\"]/\\\\&/g'
+}
+
 init_command() {
   local import_path=""
   local force=0
@@ -553,9 +557,11 @@ plan_command() {
 
         while IFS= read -r remote_dir; do
           [ -n "$remote_dir" ] || continue
-          local sid cmd
+          local sid cmd server_quoted remote_dir_quoted
           sid="scope:${scope}:$(printf '%04d' "$step_n")"
-          cmd="ssh $(printf '%q' "$server") mkdir -p $(printf '%q' "$remote_dir")"
+          server_quoted="$(shell_dquote_escape "$server")"
+          remote_dir_quoted="$(shell_dquote_escape "$remote_dir")"
+          cmd="ssh \"${server_quoted}\" \"mkdir -p -- \\\"${remote_dir_quoted}\\\"\""
           [ -z "$steps_json" ] || steps_json+="," 
           steps_json+="{\"id\":\"$(json_escape "$sid")\",\"type\":\"mkdir\",\"host\":\"$(json_escape "$server")\",\"cmd\":\"$(json_escape "$cmd")\",\"rollback\":null,\"checks\":{\"requires\":[\"ssh\"]}}"
           step_n=$((step_n + 1))
@@ -568,19 +574,22 @@ plan_command() {
         [ -n "$f" ] || continue
         rel="${f#$source_dir/}"
         [ "$f" = "$rel" ] && rel="$(basename "$f")"
-        local local_path remote_path cmd sid rollback_json rollback_cmd remote_backup_escaped remote_path_escaped
+        local local_path remote_path cmd sid rollback_json rollback_cmd remote_backup_quoted remote_path_quoted local_path_quoted remote_target_quoted server_quoted
         local_path="$f"
         remote_path="${target_dir%/}/${rel}"
         cmd="rsync ${rsync_opts}"
         if [ "$backup" = "true" ]; then
           cmd+=" --backup --suffix=$(printf '%q' "$backup_suffix")"
         fi
-        cmd+=" -- $(printf '%q' "$local_path") $(printf '%q' "${server}:${remote_path}")"
+        local_path_quoted="$(shell_dquote_escape "$local_path")"
+        remote_target_quoted="$(shell_dquote_escape "${server}:${remote_path}")"
+        cmd+=" -- \"${local_path_quoted}\" \"${remote_target_quoted}\""
         rollback_json="null"
         if [ "$backup" = "true" ]; then
-          remote_backup_escaped="$(printf '%s' "${remote_path}${backup_suffix}" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
-          remote_path_escaped="$(printf '%s' "$remote_path" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
-          rollback_cmd="ssh $(printf '%q' "$server") \"cp -a -- \\\"${remote_backup_escaped}\\\" \\\"${remote_path_escaped}\\\"\""
+          server_quoted="$(shell_dquote_escape "$server")"
+          remote_backup_quoted="$(shell_dquote_escape "${remote_path}${backup_suffix}")"
+          remote_path_quoted="$(shell_dquote_escape "$remote_path")"
+          rollback_cmd="ssh \"${server_quoted}\" \"cp -a -- \\\"${remote_backup_quoted}\\\" \\\"${remote_path_quoted}\\\"\""
           rollback_json="{\"type\":\"restore\",\"cmd\":\"$(json_escape "$rollback_cmd")\"}"
           rollbackable_steps=$((rollbackable_steps + 1))
         fi
