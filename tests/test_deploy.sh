@@ -47,10 +47,14 @@ printf 'ssh %s\n' "$*" >> "${SERAF_STUB_LOG}"
 SSH
   chmod +x "$dir/stubs/ssh"
 
-  cat > "$dir/stubs/rsync" <<'RSYNC'
+cat > "$dir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'rsync %s\n' "$*" >> "${SERAF_STUB_LOG}"
+if [ "${SERAF_PIPE_OUTPUT:-0}" = "1" ]; then
+  printf 'out|pipe\n'
+  printf 'err|pipe\n' >&2
+fi
 if [ "${SERAF_FAIL_SECOND_RSYNC:-0}" = "1" ]; then
   nfile="${SERAF_STUB_LOG}.count"
   n=0
@@ -65,6 +69,29 @@ if [ "${SERAF_FAIL_SECOND_RSYNC:-0}" = "1" ]; then
 fi
 RSYNC
   chmod +x "$dir/stubs/rsync"
+}
+
+assert_pipe_output_preserved() {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' RETURN
+  make_workspace "$tmpdir"
+
+  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  (
+    cd "$tmpdir"
+    SERAF_PIPE_OUTPUT=1 PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web --max-parallel 1 >"$tmpdir/out.txt"
+  )
+
+  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | head -n1)"
+  python - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
+import json,sys
+run=json.load(open(sys.argv[1]))
+rsync=[s for s in run["steps"] if s["type"]=="rsync"]
+assert rsync, run
+assert rsync[0]["stdout"] == "out|pipe", rsync[0]
+assert rsync[0]["stderr"] == "err|pipe", rsync[0]
+PY
 }
 
 assert_success_case() {
@@ -162,5 +189,6 @@ PY
 assert_success_case
 assert_failure_case
 assert_zero_step_scope_updates_state
+assert_pipe_output_preserved
 
 echo "test_deploy.sh: ok"
