@@ -166,7 +166,7 @@ deploy_command() {
   tmp_results="$(mktemp .seraf/.deploy_results.XXXXXX)"
   trap 'rm -f "${tmp_scopes:-}" "${tmp_steps:-}" "${tmp_meta:-}" "${tmp_results:-}"' EXIT INT TERM
 
-  python - <<'PY' "$plan_path" "$only_scope" "$tmp_meta" "$tmp_steps" "$tmp_scopes"
+  python3 - <<'PY' "$plan_path" "$only_scope" "$tmp_meta" "$tmp_steps" "$tmp_scopes"
 import json,sys
 plan_path, only_scope, meta_path, steps_path, scopes_path = sys.argv[1:]
 with open(plan_path, 'r', encoding='utf-8') as f:
