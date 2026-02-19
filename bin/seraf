@@ -9,6 +9,8 @@ usage() {
 Usage:
   seraf init [--import PATH] [--force] [--project NAME]
   seraf plan
+  seraf deploy --plan PATH [--dry-run] [--scope NAME] [--max-parallel N]
+  seraf deploy --latest [--dry-run] [--scope NAME] [--max-parallel N]
   seraf help
 USAGE
 }
@@ -42,6 +44,304 @@ json_escape() {
 
 shell_dquote_escape() {
   printf '%s' "$1" | sed -e 's/[\\$`\"]/\\\\&/g'
+}
+
+json_unescape() {
+  printf '%s' "$1" | sed -e 's/\\\//\//g' -e 's/\\"/"/g' -e 's/\\\\/\\/g'
+}
+
+split_json_objects() {
+  local input="$1"
+  local i len ch depth=0 in_string=0 escaped=0 obj=""
+  len=${#input}
+  for ((i = 0; i < len; i++)); do
+    ch="${input:i:1}"
+    if [ "$in_string" -eq 1 ]; then
+      obj+="$ch"
+      if [ "$escaped" -eq 1 ]; then
+        escaped=0
+      elif [ "$ch" = "\\" ]; then
+        escaped=1
+      elif [ "$ch" = '"' ]; then
+        in_string=0
+      fi
+      continue
+    fi
+
+    case "$ch" in
+      '"')
+        in_string=1
+        obj+="$ch"
+        ;;
+      '{')
+        depth=$((depth + 1))
+        obj+="$ch"
+        ;;
+      '}')
+        depth=$((depth - 1))
+        obj+="$ch"
+        if [ "$depth" -eq 0 ]; then
+          printf '%s\n' "$obj"
+          obj=""
+        fi
+        ;;
+      *)
+        if [ "$depth" -gt 0 ]; then
+          obj+="$ch"
+        fi
+        ;;
+    esac
+  done
+}
+
+deploy_command() {
+  local plan_path=""
+  local use_latest=0
+  local dry_run=0
+  local only_scope=""
+  local max_parallel=4
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --plan)
+        [ "$#" -ge 2 ] || { err "--plan requires a path"; return 2; }
+        plan_path="$2"
+        shift 2
+        ;;
+      --latest)
+        use_latest=1
+        shift
+        ;;
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      --scope)
+        [ "$#" -ge 2 ] || { err "--scope requires a value"; return 2; }
+        only_scope="$2"
+        shift 2
+        ;;
+      --max-parallel)
+        [ "$#" -ge 2 ] || { err "--max-parallel requires a value"; return 2; }
+        max_parallel="$2"
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      *)
+        err "unknown option: $1"
+        return 2
+        ;;
+    esac
+  done
+
+  if { [ -n "$plan_path" ] && [ "$use_latest" -eq 1 ]; } || { [ -z "$plan_path" ] && [ "$use_latest" -eq 0 ]; }; then
+    err "must provide exactly one of --plan PATH or --latest"
+    return 2
+  fi
+
+  if ! [[ "$max_parallel" =~ ^[0-9]+$ ]] || [ "$max_parallel" -lt 1 ]; then
+    err "--max-parallel must be a positive integer"
+    return 2
+  fi
+
+  if [ "$use_latest" -eq 1 ]; then
+    plan_path="$(ls -1 .seraf/plans/*.plan.json 2>/dev/null | LC_ALL=C sort | tail -n1 || true)"
+    [ -n "$plan_path" ] || { err "no plan files found in .seraf/plans"; return 1; }
+  fi
+
+  [ -f "$plan_path" ] || { err "plan not found: $plan_path"; return 1; }
+  [ -f .seraf/config.ini ] || { err "missing config: .seraf/config.ini"; return 1; }
+
+  : > .seraf/seraf.lock
+  exec 9>>.seraf/seraf.lock
+  flock 9
+
+  local tmp_steps tmp_meta tmp_scopes tmp_results
+  tmp_steps="$(mktemp .seraf/.deploy_steps.XXXXXX)"
+  tmp_meta="$(mktemp .seraf/.deploy_meta.XXXXXX)"
+  tmp_scopes="$(mktemp .seraf/.deploy_scopes.XXXXXX)"
+  tmp_results="$(mktemp .seraf/.deploy_results.XXXXXX)"
+  trap 'rm -f "${tmp_scopes:-}" "${tmp_steps:-}" "${tmp_meta:-}" "${tmp_results:-}"' EXIT INT TERM
+
+  python - <<'PY' "$plan_path" "$only_scope" "$tmp_meta" "$tmp_steps" "$tmp_scopes"
+import json,sys
+plan_path, only_scope, meta_path, steps_path, scopes_path = sys.argv[1:]
+with open(plan_path, 'r', encoding='utf-8') as f:
+    plan=json.load(f)
+
+scopes=plan.get("scopes", [])
+selected=[]
+for scope in scopes:
+    sname=scope.get("scope", "")
+    if only_scope and sname != only_scope:
+        continue
+    selected.append(scope)
+
+with open(meta_path, 'w', encoding='utf-8') as f:
+    f.write(f"kind\t{plan.get('kind','')}\n")
+    f.write(f"mode\t{plan.get('mode','')}\n")
+    f.write(f"schema\t{plan.get('schema','')}\n")
+    f.write(f"seraf_version\t{plan.get('seraf_version','')}\n")
+    f.write(f"plan_id\t{plan.get('plan_id','')}\n")
+    f.write(f"config_fingerprint\t{plan.get('config_fingerprint','')}\n")
+    f.write(f"scope_found\t{1 if (not only_scope or any(s.get('scope') == only_scope for s in scopes)) else 0}\n")
+    f.write(f"selected_scopes\t{len(selected)}\n")
+
+with open(scopes_path, 'w', encoding='utf-8') as f:
+    for scope in selected:
+        f.write(scope.get('scope','') + "\n")
+
+with open(steps_path, 'w', encoding='utf-8') as f:
+    for scope in selected:
+        sname=scope.get('scope','')
+        for step in scope.get('steps', []):
+            row=[sname, step.get('id',''), step.get('type',''), step.get('host',''), step.get('cmd','')]
+            f.write("\t".join(v.replace("\t", " ").replace("\n", " ") for v in row) + "\n")
+PY
+
+  local kind mode schema seraf_version plan_id plan_fingerprint found_scope selected_scopes
+  kind="$(awk -F'\t' '$1=="kind"{print $2}' "$tmp_meta")"
+  mode="$(awk -F'\t' '$1=="mode"{print $2}' "$tmp_meta")"
+  schema="$(awk -F'\t' '$1=="schema"{print $2}' "$tmp_meta")"
+  seraf_version="$(awk -F'\t' '$1=="seraf_version"{print $2}' "$tmp_meta")"
+  plan_id="$(awk -F'\t' '$1=="plan_id"{print $2}' "$tmp_meta")"
+  plan_fingerprint="$(awk -F'\t' '$1=="config_fingerprint"{print $2}' "$tmp_meta")"
+  found_scope="$(awk -F'\t' '$1=="scope_found"{print $2}' "$tmp_meta")"
+  selected_scopes="$(awk -F'\t' '$1=="selected_scopes"{print $2}' "$tmp_meta")"
+
+  [ "$kind" = "plan" ] || { err "invalid plan header: kind must be 'plan'"; return 1; }
+  [ "$mode" = "deploy" ] || { err "invalid plan header: mode must be 'deploy'"; return 1; }
+  [ "$schema" = "seraf.plan.v0.1" ] || { err "invalid plan header: schema must be 'seraf.plan.v0.1'"; return 1; }
+  [ "$seraf_version" = "0.1" ] || { err "invalid plan header: seraf_version must be '0.1'"; return 1; }
+
+  local actual_fingerprint
+  actual_fingerprint="sha256:$(sha256sum .seraf/config.ini | awk '{print $1}')"
+  if [ "$actual_fingerprint" != "$plan_fingerprint" ]; then
+    err "config fingerprint mismatch: expected ${plan_fingerprint}, got ${actual_fingerprint}"
+    return 1
+  fi
+
+  mkdir -p .seraf/runs
+  local run_id run_dir started_at started_epoch
+  started_epoch="$(date -u +%s)"
+  started_at="$(iso8601_utc_from_epoch "$started_epoch")"
+  run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  run_dir=".seraf/runs/${run_id}"
+  mkdir -p "$run_dir"
+
+  local run_log="${run_dir}/run.log"
+  : > "$run_log"
+  printf 'run_id=%s\nplan_id=%s\ndry_run=%s\n' "$run_id" "$plan_id" "$([ "$dry_run" -eq 1 ] && printf true || printf false)" >> "$run_log"
+
+  if [ -n "$only_scope" ] && [ "$found_scope" -ne 1 ]; then
+    err "scope not found in plan: ${only_scope}"
+    return 1
+  fi
+
+  [ "$selected_scopes" -gt 0 ] || { err "no scopes selected from plan"; return 1; }
+
+  local step_index=0 active_jobs=0 overall_rc=0
+  local -a job_pids=() job_result_files=()
+
+  run_one_step() {
+    local idx="$1" step_scope="$2" step_id="$3" step_type="$4" step_host="$5" step_cmd="$6" result_file="$7"
+    local s_epoch s_at f_epoch f_at rc=0 out_file err_file out_data err_data
+    s_epoch="$(date -u +%s)"
+    s_at="$(iso8601_utc_from_epoch "$s_epoch")"
+    out_file="${run_dir}/step-${idx}.out"
+    err_file="${run_dir}/step-${idx}.err"
+
+    if [ "$dry_run" -eq 1 ]; then
+      printf 'dry-run: %s\n' "$step_cmd" >> "$run_log"
+      : > "$out_file"
+      : > "$err_file"
+      rc=0
+    else
+      printf 'run: %s\n' "$step_cmd" >> "$run_log"
+      bash -lc "$step_cmd" >"$out_file" 2>"$err_file" || rc=$?
+    fi
+
+    f_epoch="$(date -u +%s)"
+    f_at="$(iso8601_utc_from_epoch "$f_epoch")"
+    out_data="$(head -c 8192 "$out_file" | tr '\n' '\t')"
+    err_data="$(head -c 8192 "$err_file" | tr '\n' '\t')"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$idx" "$step_scope" "$step_id" "$step_type" "$step_host" "$step_cmd" "$s_at" "$f_at" "$rc" "$out_data|$err_data" > "$result_file"
+  }
+
+  while IFS=$'\t' read -r step_scope step_id step_type step_host step_cmd; do
+    [ -n "$step_id" ] || continue
+    step_index=$((step_index + 1))
+    result_file="${run_dir}/step-${step_index}.result"
+
+    if [ "$step_type" = "mkdir" ]; then
+      while [ "$active_jobs" -gt 0 ]; do
+        local wait_pid wait_file
+        wait_pid="${job_pids[0]}"
+        wait_file="${job_result_files[0]}"
+        wait "$wait_pid" || true
+        job_pids=("${job_pids[@]:1}")
+        job_result_files=("${job_result_files[@]:1}")
+        active_jobs=$((active_jobs - 1))
+      done
+      run_one_step "$step_index" "$step_scope" "$step_id" "$step_type" "$step_host" "$step_cmd" "$result_file"
+    else
+      while [ "$active_jobs" -ge "$max_parallel" ]; do
+        local wait_pid
+        wait_pid="${job_pids[0]}"
+        wait "$wait_pid" || true
+        job_pids=("${job_pids[@]:1}")
+        job_result_files=("${job_result_files[@]:1}")
+        active_jobs=$((active_jobs - 1))
+      done
+      run_one_step "$step_index" "$step_scope" "$step_id" "$step_type" "$step_host" "$step_cmd" "$result_file" &
+      job_pids+=("$!")
+      job_result_files+=("$result_file")
+      active_jobs=$((active_jobs + 1))
+    fi
+  done < "$tmp_steps"
+
+  while [ "$active_jobs" -gt 0 ]; do
+    wait "${job_pids[0]}" || true
+    job_pids=("${job_pids[@]:1}")
+    job_result_files=("${job_result_files[@]:1}")
+    active_jobs=$((active_jobs - 1))
+  done
+
+  local steps_json="" first_step=1 line finished_at rc
+  for ((i = 1; i <= step_index; i++)); do
+    line="$(cat "${run_dir}/step-${i}.result")"
+    IFS=$'\t' read -r _idx step_scope step_id step_type step_host step_cmd s_at f_at step_rc out_err <<< "$line"
+    rc="$step_rc"
+    if [ "$rc" -ne 0 ]; then
+      overall_rc="$rc"
+    fi
+    [ "$first_step" -eq 1 ] || steps_json+=","
+    first_step=0
+    out_part="${out_err%%|*}"
+    err_part="${out_err#*|}"
+    steps_json+="{\"scope\":\"$(json_escape "$step_scope")\",\"id\":\"$(json_escape "$step_id")\",\"type\":\"$(json_escape "$step_type")\",\"host\":\"$(json_escape "$step_host")\",\"cmd\":\"$(json_escape "$step_cmd")\",\"started_at\":\"${s_at}\",\"finished_at\":\"${f_at}\",\"rc\":${rc},\"stdout\":\"$(json_escape "$out_part")\",\"stderr\":\"$(json_escape "$err_part")\"}"
+  done
+
+  finished_at="$(iso8601_utc_from_epoch "$(date -u +%s)")"
+  run_json="{\"run_id\":\"${run_id}\",\"plan_id\":\"$(json_escape "$plan_id")\",\"started_at\":\"${started_at}\",\"finished_at\":\"${finished_at}\",\"rc\":${overall_rc},\"dry_run\":$([ "$dry_run" -eq 1 ] && printf true || printf false),\"steps\":[${steps_json}]}"
+  atomic_write "${run_dir}/run.json" "$run_json"
+
+  if [ "$dry_run" -eq 0 ] && [ "$overall_rc" -eq 0 ]; then
+    local state_scope last_success rsync_count state_json
+    while IFS= read -r state_scope; do
+      [ -n "$state_scope" ] || continue
+      rsync_count="$(awk -F'\t' -v s="$state_scope" '$2==s && $4=="rsync" {c++} END {print c+0}' "${run_dir}"/step-*.result 2>/dev/null)"
+      last_success="$(iso8601_utc_from_epoch "$(date -u +%s)")"
+      mkdir -p .seraf/state
+      state_json="{\"schema\":\"seraf.state.v0.1\",\"scope\":\"$(json_escape "$state_scope")\",\"last_success\":\"${last_success}\",\"last_plan_id\":\"$(json_escape "$plan_id")\",\"last_run_id\":\"${run_id}\",\"files_last_deployed_count\":${rsync_count}}"
+      atomic_write ".seraf/state/${state_scope}.json" "$state_json"
+    done < <(awk -F'\t' '!seen[$1]++{print $1}' "$tmp_steps")
+  fi
+
+  return "$overall_rc"
 }
 
 init_command() {
@@ -635,6 +935,10 @@ main() {
     plan)
       shift
       plan_command "$@"
+      ;;
+    deploy)
+      shift
+      deploy_command "$@"
       ;;
     help|-h|--help)
       usage
