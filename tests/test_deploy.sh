@@ -14,7 +14,7 @@ CFG
 
   local fp
   fp="$(sha256sum "$dir/.seraf/config.ini" | awk '{print $1}')"
-  python - <<'PY' "$dir/.seraf/plans/test.plan.json" "$fp"
+  python3 - <<'PY' "$dir/.seraf/plans/test.plan.json" "$fp"
 import json,sys
 path,fp=sys.argv[1:]
 plan={
@@ -84,7 +84,7 @@ assert_pipe_output_preserved() {
   )
 
   run_dir="$(ls -1 "$tmpdir/.seraf/runs" | head -n1)"
-  python - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
+  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
 import json,sys
 run=json.load(open(sys.argv[1]))
 rsync=[s for s in run["steps"] if s["type"]=="rsync"]
@@ -107,7 +107,7 @@ assert_success_case() {
   )
 
   [ -s "$SERAF_STUB_LOG" ]
-  python - <<'PY' "$SERAF_STUB_LOG"
+  python3 - <<'PY' "$SERAF_STUB_LOG"
 import sys
 lines=[l.strip() for l in open(sys.argv[1]) if l.strip()]
 assert lines[0].startswith("ssh "), lines
@@ -119,7 +119,7 @@ PY
   [ -f "$tmpdir/.seraf/runs/$run_dir/run.json" ]
   [ -f "$tmpdir/.seraf/runs/$run_dir/run.log" ]
 
-  python - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json" "$tmpdir/.seraf/state/web.json"
+  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json" "$tmpdir/.seraf/state/web.json"
 import json,sys
 run=json.load(open(sys.argv[1]))
 assert run["dry_run"] is False
@@ -156,7 +156,7 @@ assert_zero_step_scope_updates_state() {
   trap 'rm -rf "$tmpdir"' RETURN
   make_workspace "$tmpdir"
 
-  python - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
 import json,sys
 path=sys.argv[1]
 with open(path) as f:
@@ -173,7 +173,7 @@ PY
   )
 
   run_dir="$(ls -1 "$tmpdir/.seraf/runs" | head -n1)"
-  python - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json" "$tmpdir/.seraf/state/web.json"
+  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json" "$tmpdir/.seraf/state/web.json"
 import json,sys
 run=json.load(open(sys.argv[1]))
 assert run["rc"] == 0
