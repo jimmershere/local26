@@ -123,7 +123,44 @@ assert_failure_case() {
   [ ! -f "$tmpdir/.seraf/state/web.json" ]
 }
 
+assert_zero_step_scope_updates_state() {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' RETURN
+  make_workspace "$tmpdir"
+
+  python - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+import json,sys
+path=sys.argv[1]
+with open(path) as f:
+    plan=json.load(f)
+plan["scopes"][0]["steps"]=[]
+with open(path,"w") as f:
+    json.dump(plan,f,separators=(",",":"))
+PY
+
+  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  (
+    cd "$tmpdir"
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web >"$tmpdir/out.txt"
+  )
+
+  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | head -n1)"
+  python - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json" "$tmpdir/.seraf/state/web.json"
+import json,sys
+run=json.load(open(sys.argv[1]))
+assert run["rc"] == 0
+assert run["steps"] == []
+state=json.load(open(sys.argv[2]))
+assert state["last_plan_id"] == "p1"
+assert state["last_run_id"] == run["run_id"]
+assert state["files_last_deployed_count"] == 0
+assert state["last_success"]
+PY
+}
+
 assert_success_case
 assert_failure_case
+assert_zero_step_scope_updates_state
 
 echo "test_deploy.sh: ok"

@@ -333,12 +333,12 @@ PY
     local state_scope last_success rsync_count state_json
     while IFS= read -r state_scope; do
       [ -n "$state_scope" ] || continue
-      rsync_count="$(awk -F'\t' -v s="$state_scope" '$2==s && $4=="rsync" {c++} END {print c+0}' "${run_dir}"/step-*.result 2>/dev/null)"
+      rsync_count="$(awk -F'\t' -v s="$state_scope" '$1==s && $3=="rsync" {c++} END {print c+0}' "$tmp_steps")"
       last_success="$(iso8601_utc_from_epoch "$(date -u +%s)")"
       mkdir -p .seraf/state
       state_json="{\"schema\":\"seraf.state.v0.1\",\"scope\":\"$(json_escape "$state_scope")\",\"last_success\":\"${last_success}\",\"last_plan_id\":\"$(json_escape "$plan_id")\",\"last_run_id\":\"${run_id}\",\"files_last_deployed_count\":${rsync_count}}"
       atomic_write ".seraf/state/${state_scope}.json" "$state_json"
-    done < <(awk -F'\t' '!seen[$1]++{print $1}' "$tmp_steps")
+    done < "$tmp_scopes"
   fi
 
   return "$overall_rc"
