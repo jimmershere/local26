@@ -33,7 +33,7 @@ CFG
   "$repo_root/bin/seraf" init --force --project demo >/dev/null
 )
 
-python - <<'PY' "$tmpdir/.seraf/state/test1.json" "$tmpdir/.seraf/state/test2.json"
+python3 - <<'PY' "$tmpdir/.seraf/state/test1.json" "$tmpdir/.seraf/state/test2.json"
 import json,sys
 for p in sys.argv[1:]:
     with open(p) as f:
@@ -45,7 +45,7 @@ PY
 
 plan_json="$(cd "$tmpdir" && "$repo_root/bin/seraf" plan --format json --stdout)"
 
-python - <<'PY' "$plan_json"
+python3 - <<'PY' "$plan_json"
 import json,sys
 plan=json.loads(sys.argv[1])
 assert plan["schema"]=="seraf.plan.v0.1"
