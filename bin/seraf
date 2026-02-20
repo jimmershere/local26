@@ -23,6 +23,76 @@ warn() {
   printf 'seraf: warning: %s\n' "$*" >&2
 }
 
+is_modern_config_ini() {
+  local path="$1"
+  grep -Eq '^[[:space:]]*\[seraf\][[:space:]]*$|^[[:space:]]*\[scope[[:space:]]+"[^"]+"\][[:space:]]*$' "$path"
+}
+
+list_scopes_from_modern_config() {
+  local path="$1"
+  awk '
+    match($0, /^[[:space:]]*\[scope[[:space:]]+"([^"]+)"\][[:space:]]*$/, m) {
+      if (!seen[m[1]]++) print m[1]
+    }
+  ' "$path"
+}
+
+upsert_seraf_project_name() {
+  local path="$1"
+  local project_name="$2"
+  local tmp
+  tmp="$(mktemp "$(dirname "$path")/.tmp.project.XXXXXX")"
+  awk -v project_name="$project_name" '
+    function print_project() {
+      print "project = " project_name
+    }
+    BEGIN {
+      in_seraf=0
+      inserted=0
+      replaced=0
+    }
+    {
+      line=$0
+
+      if (line ~ /^[[:space:]]*\[seraf\][[:space:]]*$/) {
+        in_seraf=1
+        inserted=0
+        replaced=0
+        print line
+        next
+      }
+
+      if (in_seraf && line ~ /^[[:space:]]*\[/) {
+        if (!inserted && !replaced) print_project()
+        in_seraf=0
+      }
+
+      if (in_seraf) {
+        if (line ~ /^[[:space:]]*project[[:space:]]*=/) {
+          if (!replaced) print_project()
+          replaced=1
+          inserted=1
+          next
+        }
+
+        print line
+
+        if (!inserted && line ~ /^[[:space:]]*version[[:space:]]*=/) {
+          print_project()
+          inserted=1
+        }
+        next
+      }
+
+      print line
+    }
+    END {
+      if (in_seraf && !inserted && !replaced) print_project()
+    }
+  ' "$path" > "$tmp"
+  mv -f "$tmp" "$path"
+}
+
 iso8601_utc_from_epoch() {
   local epoch="$1"
   date -u -d "@${epoch}" +"%Y-%m-%dT%H:%M:%SZ"
@@ -418,6 +488,7 @@ init_command() {
   local import_path=""
   local force=0
   local project_name=""
+  local project_overridden=0
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -433,6 +504,7 @@ init_command() {
       --project)
         [ "$#" -ge 2 ] || { err "--project requires a name"; return 2; }
         project_name="$2"
+        project_overridden=1
         shift 2
         ;;
       -h|--help)
@@ -486,6 +558,81 @@ init_command() {
   fi
 
   [ -f "$import_path" ] || { err "legacy config not found: $import_path"; return 1; }
+
+  if is_modern_config_ini "$import_path"; then
+    local has_seraf_section has_valid_version has_scope
+    has_seraf_section=0
+    has_valid_version=0
+    has_scope=0
+
+    has_seraf_section="$(awk '
+      /^[[:space:]]*\[seraf\][[:space:]]*$/ { found=1 }
+      END { print found ? 1 : 0 }
+    ' "$import_path")"
+
+    has_valid_version="$(awk -v expected="${SERAF_VERSION}" '
+      function trim(s) { gsub(/^[[:space:]]+/, "", s); gsub(/[[:space:]]+$/, "", s); return s }
+      /^[[:space:]]*\[seraf\][[:space:]]*$/ { in_seraf=1; next }
+      in_seraf && /^[[:space:]]*\[/ { in_seraf=0 }
+      in_seraf && match($0, /^[[:space:]]*version[[:space:]]*=[[:space:]]*(.*)$/, m) {
+        v=trim(m[1])
+        if (v == "0.1" || v == expected) valid=1
+      }
+      END { print valid ? 1 : 0 }
+    ' "$import_path")"
+
+    has_scope="$(awk '
+      match($0, /^[[:space:]]*\[scope[[:space:]]+"[^"]+"\][[:space:]]*$/, m) { found=1 }
+      END { print found ? 1 : 0 }
+    ' "$import_path")"
+
+    if [ "$has_seraf_section" -ne 1 ]; then
+      err "modern config import failed: missing [seraf] section"
+      return 1
+    fi
+    if [ "$has_valid_version" -ne 1 ]; then
+      err "modern config import failed: [seraf] version must be 0.1 or ${SERAF_VERSION}"
+      return 1
+    fi
+    if [ "$has_scope" -ne 1 ]; then
+      err "modern config import failed: missing [scope \"NAME\"] sections"
+      return 1
+    fi
+
+    cp "$import_path" .seraf/config.ini
+    if [ "$project_overridden" -eq 1 ]; then
+      upsert_seraf_project_name .seraf/config.ini "$project_name"
+    fi
+
+    list_scopes_from_modern_config "$import_path" > "$scope_list_file"
+
+    while IFS= read -r scope; do
+      [ -n "$scope" ] || continue
+      local last_success="null"
+      if [ -f "state/${scope}.last" ]; then
+        local epoch
+        epoch="$(stat -c %Y "state/${scope}.last")"
+        last_success="\"$(iso8601_utc_from_epoch "$epoch")\""
+      fi
+
+      local ts
+      ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      local state_json
+      state_json="{
+  \"schema\":\"seraf.state.v0.1\",
+  \"scope\":\"${scope}\",
+  \"created_at\":\"${ts}\",
+  \"last_success\":${last_success},
+  \"last_plan_id\":null,
+  \"last_run_id\":null,
+  \"files_last_deployed_count\":0
+}"
+      atomic_write ".seraf/state/${scope}.json" "$state_json"
+    done < "$scope_list_file"
+
+    printf 'Initialized SERAF .seraf workspace\n'
+    return 0
+  fi
 
   awk -v kvout="$tmp_kv" -v scopesout="$tmp_scopes" '
       function trim(s) { gsub(/^[ \t\r\n]+/, "", s); gsub(/[ \t\r\n]+$/, "", s); return s }
