@@ -94,6 +94,114 @@ assert rsync[0]["stderr"] == "err|pipe", rsync[0]
 PY
 }
 
+test_parallel_race_runjson_integrity() {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' RETURN
+  make_workspace "$tmpdir"
+
+  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+import json,sys
+path=sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    plan=json.load(f)
+plan["scopes"][0]["steps"]=[
+    {
+      "id":f"scope:web:{i:04d}",
+      "type":"rsync",
+      "host":"h1",
+      "cmd":f'rsync -az -- "/tmp/src-{i}" "h1:/srv/app/dst-{i}"'
+    }
+    for i in range(1,51)
+]
+with open(path,"w",encoding="utf-8") as f:
+    json.dump(plan,f,separators=(",",":"))
+PY
+
+  cat > "$tmpdir/stubs/rsync" <<'RSYNC'
+#!/usr/bin/env bash
+set -euo pipefail
+jitter_pre_ms=$((RANDOM % 201))
+sleep "0.$(printf '%03d' "$jitter_pre_ms")"
+printf 'rsync %s\n' "$*" >> "${SERAF_STUB_LOG}"
+jitter_post_ms=$((RANDOM % 201))
+sleep "0.$(printf '%03d' "$jitter_post_ms")"
+RSYNC
+  chmod +x "$tmpdir/stubs/rsync"
+
+  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  set +e
+  (
+    cd "$tmpdir"
+    PATH="$tmpdir/stubs:$PATH" timeout -k 5 90 "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web --max-parallel 10 >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
+  )
+  deploy_rc=$?
+  set -e
+  [ "$deploy_rc" -eq 0 ] || { echo "parallel deploy failed rc=$deploy_rc"; cat "$tmpdir/err.txt"; return 1; }
+
+  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | head -n1)"
+  run_json_path="$tmpdir/.seraf/runs/$run_dir/run.json"
+  [ -f "$run_json_path" ]
+
+  python3 - <<'PY' "$run_json_path"
+import json,re,sys
+run_json_path=sys.argv[1]
+
+try:
+    with open(run_json_path, encoding="utf-8") as f:
+        run=json.load(f)
+except Exception as e:
+    raise AssertionError(f"run.json parse failed: {e}")
+
+steps=run.get("steps")
+if not isinstance(steps, list):
+    raise AssertionError(f"run.steps must be a list, got: {type(steps).__name__}")
+
+step_count=len(steps)
+ids=[s.get("id") for s in steps]
+dupes=sorted({sid for sid in ids if ids.count(sid) > 1})
+
+if step_count != 50:
+    raise AssertionError(
+        f"run step count mismatch: detected_count={step_count}, duplicate_ids={dupes}"
+    )
+
+missing_required=[]
+for i,s in enumerate(steps):
+    required=("scope","id","type","host","cmd","started_at","finished_at","rc","stdout","stderr")
+    missing=[k for k in required if k not in s]
+    if missing:
+        missing_required.append((i,missing))
+if missing_required:
+    raise AssertionError(f"steps missing required fields: {missing_required[:5]}")
+
+pattern=re.compile(r"^scope:web:(\d{4})$")
+parsed=[]
+for sid in ids:
+    if not isinstance(sid, str):
+        raise AssertionError(f"step id must be a string, got: {sid!r}")
+    m=pattern.match(sid)
+    if not m:
+        raise AssertionError(f"unexpected step id format: {sid}")
+    parsed.append(int(m.group(1)))
+
+expected=set(range(1,51))
+actual=set(parsed)
+if actual != expected:
+    missing=sorted(expected-actual)
+    extra=sorted(actual-expected)
+    raise AssertionError(f"step id coverage mismatch: missing={missing}, extra={extra}, duplicate_ids={dupes}")
+
+non_terminal=[(s.get("id"), s.get("rc")) for s in steps if not isinstance(s.get("rc"), int)]
+if non_terminal:
+    raise AssertionError(f"steps with non-terminal rc values: {non_terminal[:5]}")
+
+failures=[(s.get("id"), s.get("rc")) for s in steps if s.get("rc") != 0]
+if failures:
+    raise AssertionError(f"expected all steps to succeed, failures={failures[:5]}")
+PY
+}
+
 assert_success_case() {
   local tmpdir
   tmpdir="$(mktemp -d)"
@@ -190,5 +298,6 @@ assert_success_case
 assert_failure_case
 assert_zero_step_scope_updates_state
 assert_pipe_output_preserved
+test_parallel_race_runjson_integrity
 
 echo "test_deploy.sh: ok"
