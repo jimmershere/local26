@@ -271,6 +271,75 @@ assert_failure_case() {
   [ ! -f "$tmpdir/.seraf/state/web.json" ]
 }
 
+
+assert_remote_cmd_barrier_ordering() {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' RETURN
+  make_workspace "$tmpdir"
+
+  python3 - <<'PY2' "$tmpdir/.seraf/plans/test.plan.json"
+import json,sys
+path=sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    plan=json.load(f)
+plan["scopes"][0]["steps"]=[
+  {"id":"scope:web:0001","type":"rsync","host":"h1","cmd":"rsync -az -- \"/tmp/a\" \"h1:/srv/app/a\""},
+  {"id":"scope:web:0002","type":"rsync","host":"h1","cmd":"rsync -az -- \"/tmp/b\" \"h1:/srv/app/b\""},
+  {"id":"scope:web:0003","type":"remote_cmd","server":"h1","cmd":"systemctl stop app","label":"stop"},
+  {"id":"scope:web:0004","type":"rsync","host":"h1","cmd":"rsync -az -- \"/tmp/c\" \"h1:/srv/app/c\""}
+]
+with open(path,"w",encoding="utf-8") as f:
+    json.dump(plan,f,separators=(",",":"))
+PY2
+
+  cat > "$tmpdir/stubs/rsync" <<'RSYNC'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"/tmp/c"* ]]; then
+  tag="c"
+else
+  sleep 0.2
+  if [[ "$*" == *"/tmp/a"* ]]; then
+    tag="a"
+  else
+    tag="b"
+  fi
+fi
+printf 'rsync-start:%s\n' "$tag" >> "${SERAF_STUB_LOG}"
+if [ "$tag" != "c" ]; then
+  sleep 0.2
+fi
+printf 'rsync-end:%s\n' "$tag" >> "${SERAF_STUB_LOG}"
+RSYNC
+  chmod +x "$tmpdir/stubs/rsync"
+
+  cat > "$tmpdir/stubs/ssh" <<'SSH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ssh:%s\n' "$*" >> "${SERAF_STUB_LOG}"
+SSH
+  chmod +x "$tmpdir/stubs/ssh"
+
+  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  (
+    cd "$tmpdir"
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web --max-parallel 2 >"$tmpdir/out.txt"
+  )
+
+  python3 - <<'PY2' "$SERAF_STUB_LOG"
+import sys
+lines=[l.strip() for l in open(sys.argv[1]) if l.strip()]
+remote_idx=next(i for i,l in enumerate(lines) if l.startswith("ssh:h1 systemctl stop app"))
+a_end=next(i for i,l in enumerate(lines) if l=="rsync-end:a")
+b_end=next(i for i,l in enumerate(lines) if l=="rsync-end:b")
+c_start=next(i for i,l in enumerate(lines) if l=="rsync-start:c")
+assert a_end < remote_idx, lines
+assert b_end < remote_idx, lines
+assert remote_idx < c_start, lines
+PY2
+}
+
 assert_zero_step_scope_updates_state() {
   local tmpdir
   tmpdir="$(mktemp -d)"
@@ -312,5 +381,6 @@ assert_failure_case
 assert_zero_step_scope_updates_state
 assert_pipe_output_preserved
 test_parallel_race_runjson_integrity
+assert_remote_cmd_barrier_ordering
 
 echo "test_deploy.sh: ok"
