@@ -46,6 +46,66 @@ shell_dquote_escape() {
   printf '%s' "$1" | sed -e 's/[\\$`\"]/\\\\&/g'
 }
 
+git_bin() {
+  if [ -x /usr/bin/git ]; then
+    printf '/usr/bin/git\n'
+  else
+    command -v git || true
+  fi
+}
+
+resolve_ref_to_sha() {
+  local repo_cache_dir="$1" ref="$2"
+  local git_cmd sha
+  git_cmd="$(git_bin)"
+  [ -n "$git_cmd" ] || { err "required tool missing: git"; return 1; }
+  sha="$($git_cmd --git-dir="$repo_cache_dir" rev-parse "${ref}^{commit}")" || return 1
+  if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+    err "unable to resolve ref '${ref}' to full commit sha"
+    return 1
+  fi
+  printf '%s\n' "$sha"
+}
+
+ensure_repo_cache() {
+  local repo_url="$1" workspace_root_dir="$2"
+  local git_cmd repo_cache_dir
+  git_cmd="$(git_bin)"
+  [ -n "$git_cmd" ] || { err "required tool missing: git"; return 1; }
+
+  mkdir -p "$workspace_root_dir"
+  repo_cache_dir="${workspace_root_dir}/repo.git"
+  if [ ! -d "$repo_cache_dir" ]; then
+    $git_cmd clone --mirror "$repo_url" "$repo_cache_dir" >/dev/null 2>&1
+  fi
+  $git_cmd --git-dir="$repo_cache_dir" fetch --prune >/dev/null 2>&1
+}
+
+ensure_checkout() {
+  local scope="$1" repo_url="$2" ref="$3" sha="$4" workspace_root_dir="$5"
+  local git_cmd repo_cache_dir checkout_dir head_sha
+  git_cmd="$(git_bin)"
+  [ -n "$git_cmd" ] || { err "required tool missing: git"; return 1; }
+
+  ensure_repo_cache "$repo_url" "$workspace_root_dir"
+  repo_cache_dir="${workspace_root_dir}/repo.git"
+
+  checkout_dir="${workspace_root_dir}/checkouts/${sha}"
+  if [ ! -d "$checkout_dir" ]; then
+    mkdir -p "${workspace_root_dir}/checkouts"
+    $git_cmd clone "$repo_cache_dir" "$checkout_dir" >/dev/null 2>&1
+    $git_cmd -C "$checkout_dir" checkout --detach "$sha" >/dev/null 2>&1
+  else
+    head_sha="$($git_cmd -C "$checkout_dir" rev-parse HEAD)"
+    if [ "$head_sha" != "$sha" ]; then
+      $git_cmd -C "$checkout_dir" fetch --all --prune >/dev/null 2>&1
+      $git_cmd -C "$checkout_dir" checkout --detach "$sha" >/dev/null 2>&1
+    fi
+  fi
+
+  printf '%s\n' "$checkout_dir"
+}
+
 json_unescape() {
   printf '%s' "$1" | sed -e 's/\\\//\//g' -e 's/\\"/"/g' -e 's/\\\\/\\/g'
 }
@@ -198,7 +258,8 @@ with open(steps_path, 'w', encoding='utf-8') as f:
     for scope in selected:
         sname=scope.get('scope','')
         for step in scope.get('steps', []):
-            row=[sname, step.get('id',''), step.get('type',''), step.get('host',''), step.get('cmd','')]
+            host=step.get('host','') or step.get('server','')
+            row=[sname, step.get('id',''), step.get('type',''), host, step.get('cmd',''), step.get('label','')]
             f.write("\t".join(v.replace("\t", " ").replace("\n", " ") for v in row) + "\n")
 PY
 
@@ -261,7 +322,11 @@ PY
       rc=0
     else
       printf 'run: %s\n' "$step_cmd" >> "$run_log"
-      bash -lc "$step_cmd" >"$out_file" 2>"$err_file" || rc=$?
+      if [ "$step_type" = "remote_cmd" ]; then
+        ssh "$step_host" "$step_cmd" >"$out_file" 2>"$err_file" || rc=$?
+      else
+        bash -lc "$step_cmd" >"$out_file" 2>"$err_file" || rc=$?
+      fi
     fi
 
     f_epoch="$(date -u +%s)"
@@ -271,14 +336,15 @@ PY
     out_b64="$(printf '%s' "$out_data" | base64 | tr -d '\n')"
     err_b64="$(printf '%s' "$err_data" | base64 | tr -d '\n')"
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$idx" "$step_scope" "$step_id" "$step_type" "$step_host" "$step_cmd" "$s_at" "$f_at" "$rc" "$out_b64" "$err_b64" > "$result_file"
+    return "$rc"
   }
 
-  while IFS=$'\t' read -r step_scope step_id step_type step_host step_cmd; do
+  while IFS=$'\t' read -r step_scope step_id step_type step_host step_cmd step_label; do
     [ -n "$step_id" ] || continue
     step_index=$((step_index + 1))
     result_file="${run_dir}/step-${step_index}.result"
 
-    if [ "$step_type" = "mkdir" ]; then
+    if [ "$step_type" = "mkdir" ] || [ "$step_type" = "remote_cmd" ]; then
       while [ "$active_jobs" -gt 0 ]; do
         local wait_pid wait_file
         wait_pid="${job_pids[0]}"
@@ -288,7 +354,9 @@ PY
         job_result_files=("${job_result_files[@]:1}")
         active_jobs=$((active_jobs - 1))
       done
-      run_one_step "$step_index" "$step_scope" "$step_id" "$step_type" "$step_host" "$step_cmd" "$result_file"
+      run_one_step "$step_index" "$step_scope" "$step_id" "$step_type" "$step_host" "$step_cmd" "$result_file" || {
+        [ "$step_type" = "remote_cmd" ] && break
+      }
     else
       while [ "$active_jobs" -ge "$max_parallel" ]; do
         local wait_pid
@@ -762,6 +830,8 @@ plan_command() {
     fi
 
     local enabled source_dir target_dir servers_csv discovery rsync_opts backup backup_suffix remote_mkdir
+    local workspace workspace_root_dir source_subdir workspace_provider repo_url ref pin
+    local deploy_mode stop_cmd start_cmd status_cmd activate_cmd verify_cmd cleanup_cmd
     enabled="$(awk -F'\t' -v s="$scope" '$1==s && $2=="enabled" {print $3; exit}' "$tmp_scope_kv")"
     [ -n "$enabled" ] || enabled="true"
     [ "$enabled" = "true" ] || continue
@@ -774,6 +844,19 @@ plan_command() {
     backup="$(awk -F'\t' -v s="$scope" '$1==s && $2=="backup" {print $3; exit}' "$tmp_scope_kv")"
     backup_suffix="$(awk -F'\t' -v s="$scope" '$1==s && $2=="backup_suffix" {print $3; exit}' "$tmp_scope_kv")"
     remote_mkdir="$(awk -F'\t' -v s="$scope" '$1==s && $2=="remote_mkdir" {print $3; exit}' "$tmp_scope_kv")"
+    workspace="$(awk -F'\t' -v s="$scope" '$1==s && $2=="workspace" {print $3; exit}' "$tmp_scope_kv")"
+    workspace_root_dir="$(awk -F'\t' -v s="$scope" '$1==s && $2=="workspace_dir" {print $3; exit}' "$tmp_scope_kv")"
+    source_subdir="$(awk -F'\t' -v s="$scope" '$1==s && $2=="source_subdir" {print $3; exit}' "$tmp_scope_kv")"
+    repo_url="$(awk -F'\t' -v s="$scope" '$1==s && $2=="repo_url" {print $3; exit}' "$tmp_scope_kv")"
+    ref="$(awk -F'\t' -v s="$scope" '$1==s && $2=="ref" {print $3; exit}' "$tmp_scope_kv")"
+    pin="$(awk -F'\t' -v s="$scope" '$1==s && $2=="pin" {print $3; exit}' "$tmp_scope_kv")"
+    deploy_mode="$(awk -F'\t' -v s="$scope" '$1==s && $2=="deploy_mode" {print $3; exit}' "$tmp_scope_kv")"
+    stop_cmd="$(awk -F'\t' -v s="$scope" '$1==s && $2=="stop_cmd" {print $3; exit}' "$tmp_scope_kv")"
+    start_cmd="$(awk -F'\t' -v s="$scope" '$1==s && $2=="start_cmd" {print $3; exit}' "$tmp_scope_kv")"
+    status_cmd="$(awk -F'\t' -v s="$scope" '$1==s && $2=="status_cmd" {print $3; exit}' "$tmp_scope_kv")"
+    activate_cmd="$(awk -F'\t' -v s="$scope" '$1==s && $2=="activate_cmd" {print $3; exit}' "$tmp_scope_kv")"
+    verify_cmd="$(awk -F'\t' -v s="$scope" '$1==s && $2=="verify_cmd" {print $3; exit}' "$tmp_scope_kv")"
+    cleanup_cmd="$(awk -F'\t' -v s="$scope" '$1==s && $2=="cleanup_cmd" {print $3; exit}' "$tmp_scope_kv")"
 
     [ -n "$rsync_opts" ] || rsync_opts="$default_rsync_opts"
     [ -n "$backup" ] || backup="$default_backup"
@@ -785,6 +868,23 @@ plan_command() {
       true|false) ;;
       *) backup="false" ;;
     esac
+
+    workspace_provider="source_dir"
+    local commit_sha="" resolved_workspace_dir=""
+    if [ "$workspace" = "git" ]; then
+      [ -n "$repo_url" ] || { err "scope ${scope}: repo_url is required when workspace=git"; return 1; }
+      [ -n "$ref" ] || { err "scope ${scope}: ref is required when workspace=git"; return 1; }
+      [ -n "$pin" ] || pin="true"
+      [ -n "$workspace_root_dir" ] || workspace_root_dir=".seraf/workspaces/${scope}"
+      ensure_repo_cache "$repo_url" "$workspace_root_dir"
+      commit_sha="$(resolve_ref_to_sha "${workspace_root_dir}/repo.git" "$ref")"
+      resolved_workspace_dir="$(ensure_checkout "$scope" "$repo_url" "$ref" "$commit_sha" "$workspace_root_dir")"
+      if [ -n "$source_subdir" ]; then
+        resolved_workspace_dir="${resolved_workspace_dir%/}/${source_subdir#./}"
+      fi
+      workspace_provider="git"
+      source_dir="$resolved_workspace_dir"
+    fi
 
     [ -n "$source_dir" ] || continue
     [ -n "$target_dir" ] || continue
@@ -843,6 +943,10 @@ plan_command() {
     done < "$tmp_files"
 
     local steps_json="" step_n=1 mkdir_steps=0 rsync_steps=0 rollbackable_steps=0
+    local should_emit_remote_cmd=0
+    if [ "$deploy_mode" = "stage_release" ] || [ -n "$stop_cmd" ] || [ -n "$start_cmd" ] || [ -n "$status_cmd" ]; then
+      should_emit_remote_cmd=1
+    fi
     for server in "${servers_arr[@]}"; do
       server="$(printf '%s' "$server" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
       [ -n "$server" ] || continue
@@ -870,6 +974,19 @@ plan_command() {
           mkdir_steps=$((mkdir_steps + 1))
         done < "$tmp_dirs"
         rm -f "$tmp_dirs"
+      fi
+
+      if [ "$should_emit_remote_cmd" -eq 1 ] && [ -n "$stop_cmd" ]; then
+        sid="scope:${scope}:$(printf '%04d' "$step_n")"
+        [ -z "$steps_json" ] || steps_json+="," 
+        steps_json+="{\"id\":\"$(json_escape "$sid")\",\"type\":\"remote_cmd\",\"server\":\"$(json_escape "$server")\",\"cmd\":\"$(json_escape "$stop_cmd")\",\"label\":\"stop\",\"checks\":{\"requires\":[\"ssh\"]}}"
+        step_n=$((step_n + 1))
+      fi
+      if [ "$should_emit_remote_cmd" -eq 1 ] && [ -n "$activate_cmd" ]; then
+        sid="scope:${scope}:$(printf '%04d' "$step_n")"
+        [ -z "$steps_json" ] || steps_json+="," 
+        steps_json+="{\"id\":\"$(json_escape "$sid")\",\"type\":\"remote_cmd\",\"server\":\"$(json_escape "$server")\",\"cmd\":\"$(json_escape "$activate_cmd")\",\"label\":\"activate\",\"checks\":{\"requires\":[\"ssh\"]}}"
+        step_n=$((step_n + 1))
       fi
 
       while IFS= read -r f; do
@@ -901,6 +1018,31 @@ plan_command() {
         step_n=$((step_n + 1))
         rsync_steps=$((rsync_steps + 1))
       done < "$tmp_files"
+
+      if [ "$should_emit_remote_cmd" -eq 1 ] && [ -n "$start_cmd" ]; then
+        sid="scope:${scope}:$(printf '%04d' "$step_n")"
+        [ -z "$steps_json" ] || steps_json+="," 
+        steps_json+="{\"id\":\"$(json_escape "$sid")\",\"type\":\"remote_cmd\",\"server\":\"$(json_escape "$server")\",\"cmd\":\"$(json_escape "$start_cmd")\",\"label\":\"start\",\"checks\":{\"requires\":[\"ssh\"]}}"
+        step_n=$((step_n + 1))
+      fi
+      if [ "$should_emit_remote_cmd" -eq 1 ] && [ -n "$verify_cmd" ]; then
+        sid="scope:${scope}:$(printf '%04d' "$step_n")"
+        [ -z "$steps_json" ] || steps_json+="," 
+        steps_json+="{\"id\":\"$(json_escape "$sid")\",\"type\":\"remote_cmd\",\"server\":\"$(json_escape "$server")\",\"cmd\":\"$(json_escape "$verify_cmd")\",\"label\":\"verify\",\"checks\":{\"requires\":[\"ssh\"]}}"
+        step_n=$((step_n + 1))
+      fi
+      if [ "$should_emit_remote_cmd" -eq 1 ] && [ -n "$status_cmd" ]; then
+        sid="scope:${scope}:$(printf '%04d' "$step_n")"
+        [ -z "$steps_json" ] || steps_json+="," 
+        steps_json+="{\"id\":\"$(json_escape "$sid")\",\"type\":\"remote_cmd\",\"server\":\"$(json_escape "$server")\",\"cmd\":\"$(json_escape "$status_cmd")\",\"label\":\"status\",\"checks\":{\"requires\":[\"ssh\"]}}"
+        step_n=$((step_n + 1))
+      fi
+      if [ "$should_emit_remote_cmd" -eq 1 ] && [ -n "$cleanup_cmd" ]; then
+        sid="scope:${scope}:$(printf '%04d' "$step_n")"
+        [ -z "$steps_json" ] || steps_json+="," 
+        steps_json+="{\"id\":\"$(json_escape "$sid")\",\"type\":\"remote_cmd\",\"server\":\"$(json_escape "$server")\",\"cmd\":\"$(json_escape "$cleanup_cmd")\",\"label\":\"cleanup\",\"checks\":{\"requires\":[\"ssh\"]}}"
+        step_n=$((step_n + 1))
+      fi
     done
 
     if [ "$first_scope" -eq 1 ]; then
@@ -909,7 +1051,11 @@ plan_command() {
       plan_json+="," 
     fi
 
-    plan_json+="{\"scope\":\"$(json_escape "$scope")\",\"inputs\":{\"source_dir\":\"$(json_escape "$source_dir")\",\"target_dir\":\"$(json_escape "$target_dir")\",\"servers\":${servers_json},\"rsync_opts\":\"$(json_escape "$rsync_opts")\",\"backup\":$([ "$backup" = "true" ] && printf true || printf false),\"backup_suffix\":\"$(json_escape "$backup_suffix")\",\"remote_mkdir\":$([ "$remote_mkdir" = "true" ] && printf true || printf false)},\"discovery\":{\"strategy\":\"$(json_escape "$discovery")\",\"since\":${since_json},\"files_found\":${files_found},\"files_selected\":${selected_count}},\"routing\":{\"env_from_filename_prefix\":\"$(json_escape "$routing_filename_prefix")\",\"env_from_server_name_char_at\":$([ -n "$routing_server_char_at" ] && printf '%s' "$routing_server_char_at" || printf null),\"env_from_server_name_char_map\":\"$(json_escape "$routing_server_char_map")\"},\"steps\":[${steps_json}],\"summary\":{\"counts\":{\"mkdir_steps\":${mkdir_steps},\"rsync_steps\":${rsync_steps},\"rollbackable_steps\":${rollbackable_steps},\"warnings\":[]}}}"
+    local workspace_inputs_json=""
+    if [ "$workspace_provider" = "git" ]; then
+      workspace_inputs_json=",\"workspace_provider\":\"git\",\"repo_url\":\"$(json_escape "$repo_url")\",\"ref\":\"$(json_escape "$ref")\",\"pin\":$([ "$pin" = "false" ] && printf false || printf true),\"commit_sha\":\"$(json_escape "$commit_sha")\",\"workspace_dir\":\"$(json_escape "$source_dir")\""
+    fi
+    plan_json+="{\"scope\":\"$(json_escape "$scope")\",\"inputs\":{\"source_dir\":\"$(json_escape "$source_dir")\",\"target_dir\":\"$(json_escape "$target_dir")\",\"servers\":${servers_json},\"rsync_opts\":\"$(json_escape "$rsync_opts")\",\"backup\":$([ "$backup" = "true" ] && printf true || printf false),\"backup_suffix\":\"$(json_escape "$backup_suffix")\",\"remote_mkdir\":$([ "$remote_mkdir" = "true" ] && printf true || printf false)${workspace_inputs_json}},\"discovery\":{\"strategy\":\"$(json_escape "$discovery")\",\"since\":${since_json},\"files_found\":${files_found},\"files_selected\":${selected_count}},\"routing\":{\"env_from_filename_prefix\":\"$(json_escape "$routing_filename_prefix")\",\"env_from_server_name_char_at\":$([ -n "$routing_server_char_at" ] && printf '%s' "$routing_server_char_at" || printf null),\"env_from_server_name_char_map\":\"$(json_escape "$routing_server_char_map")\"},\"steps\":[${steps_json}],\"summary\":{\"counts\":{\"mkdir_steps\":${mkdir_steps},\"rsync_steps\":${rsync_steps},\"rollbackable_steps\":${rollbackable_steps},\"warnings\":[]}}}"
 
     rm -f "$tmp_ref" "$tmp_files" "$tmp_all"
   done < "$scope_list_file"
