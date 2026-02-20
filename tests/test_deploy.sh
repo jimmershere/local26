@@ -83,7 +83,7 @@ assert_pipe_output_preserved() {
     SERAF_PIPE_OUTPUT=1 PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web --max-parallel 1 >"$tmpdir/out.txt"
   )
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | head -n1)"
+  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
   python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
 import json,sys
 run=json.load(open(sys.argv[1]))
@@ -139,12 +139,13 @@ RSYNC
   set -e
   [ "$deploy_rc" -eq 0 ] || { echo "parallel deploy failed rc=$deploy_rc"; cat "$tmpdir/err.txt"; return 1; }
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | head -n1)"
+  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
   run_json_path="$tmpdir/.seraf/runs/$run_dir/run.json"
   [ -f "$run_json_path" ]
 
   python3 - <<'PY' "$run_json_path"
 import json,re,sys
+from collections import Counter
 run_json_path=sys.argv[1]
 
 try:
@@ -159,7 +160,8 @@ if not isinstance(steps, list):
 
 step_count=len(steps)
 ids=[s.get("id") for s in steps]
-dupes=sorted({sid for sid in ids if ids.count(sid) > 1})
+counts=Counter(ids)
+dupes=sorted([sid for sid,c in counts.items() if c > 1])
 
 if step_count != 50:
     raise AssertionError(
@@ -199,6 +201,17 @@ if non_terminal:
 failures=[(s.get("id"), s.get("rc")) for s in steps if s.get("rc") != 0]
 if failures:
     raise AssertionError(f"expected all steps to succeed, failures={failures[:5]}")
+
+if run.get("rc") != 0:
+    raise AssertionError(f"run-level rc must be 0, got: {run.get('rc')}")
+
+for s in steps:
+    started=s.get("started_at")
+    finished=s.get("finished_at")
+    if started and finished and started > finished:
+        raise AssertionError(
+            f"invalid timestamps for {s.get('id')}: started_at={started}, finished_at={finished}"
+        )
 PY
 }
 
@@ -223,7 +236,7 @@ assert lines[1].startswith("rsync "), lines
 assert lines[2].startswith("rsync "), lines
 PY
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | head -n1)"
+  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
   [ -f "$tmpdir/.seraf/runs/$run_dir/run.json" ]
   [ -f "$tmpdir/.seraf/runs/$run_dir/run.log" ]
 
@@ -280,7 +293,7 @@ PY
     PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web >"$tmpdir/out.txt"
   )
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | head -n1)"
+  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
   python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json" "$tmpdir/.seraf/state/web.json"
 import json,sys
 run=json.load(open(sys.argv[1]))
