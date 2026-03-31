@@ -69,6 +69,7 @@ Usage:
   seraf plan
   seraf deploy --plan PATH [--dry-run] [--scope NAME] [--max-parallel N]
   seraf deploy --latest [--dry-run] [--scope NAME] [--max-parallel N]
+  seraf pull [--scope NAME] [--hosts CSV] [--rsync-opts OPTS] [--dry-run]
   seraf diag [--project NAME] [--hosts CSV] [--diag-type NAME] [--pid PID]
              [--duration SEC] [--remote-cmd CMD] [--out-dir DIR]
              [--ssh-user USER] [--include-disabled] [--dry-run]
@@ -879,6 +880,138 @@ pull_logs_command() {
   [ "$failed_count" -eq 0 ]
 }
 
+pull_command() {
+  local config_file=".seraf/config.ini"
+  local only_scope=""
+  local hosts_override=""
+  local rsync_opts="-az"
+  local dry_run=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --scope)
+        [ "$#" -ge 2 ] || { err "--scope requires a value"; return 2; }
+        only_scope="$2"
+        shift 2
+        ;;
+      --hosts)
+        [ "$#" -ge 2 ] || { err "--hosts requires a CSV value"; return 2; }
+        hosts_override="$2"
+        shift 2
+        ;;
+      --rsync-opts)
+        [ "$#" -ge 2 ] || { err "--rsync-opts requires a value"; return 2; }
+        rsync_opts="$2"
+        shift 2
+        ;;
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      *)
+        err "unknown option: $1"
+        return 2
+        ;;
+    esac
+  done
+
+  [ -f "$config_file" ] || { err "missing config: ${config_file}"; return 1; }
+
+  local tmp_scope_kv scope_list_file
+  tmp_scope_kv="$(mktemp .seraf/.scope_kv.pull.XXXXXX)"
+  scope_list_file="$(mktemp .seraf/.scope_list.pull.XXXXXX)"
+  trap 'rm -f "${tmp_scope_kv:-}" "${scope_list_file:-}"' RETURN
+
+  awk -v out="$tmp_scope_kv" '
+    function trim(s) { gsub(/^[[:space:]]+/, "", s); gsub(/[[:space:]]+$/, "", s); return s }
+    BEGIN { section=""; scope="" }
+    {
+      line=$0
+      sub(/\r$/, "", line)
+      if (line ~ /^[ \t]*$/) next
+      if (line ~ /^[ \t]*[;#]/) next
+      if (match(line, /^[ \t]*\[scope "([^"]+)"\][ \t]*$/, m)) {
+        section="scope"
+        scope=m[1]
+        print scope >> out
+        next
+      }
+      if (line ~ /^[ \t]*\[/) {
+        section=""
+        scope=""
+        next
+      }
+      if (section != "scope") next
+      if (match(line, /^[ \t]*([^=]+)[ \t]*=[ \t]*(.*)$/, m)) {
+        key=trim(m[1])
+        value=trim(m[2])
+        printf("%s\t%s\t%s\n", scope, key, value) >> out
+      }
+    }
+  ' "$config_file"
+
+  awk -F'\t' 'NF==1 && !seen[$1]++ {print $1}' "$tmp_scope_kv" > "$scope_list_file"
+
+  local success_count=0 failed_count=0 matched_scopes=0
+  local scope enabled source_dir target_dir servers_csv effective_hosts_csv raw_host host
+  while IFS= read -r scope; do
+    [ -n "$scope" ] || continue
+    if [ -n "$only_scope" ] && [ "$scope" != "$only_scope" ]; then
+      continue
+    fi
+    matched_scopes=$((matched_scopes + 1))
+
+    enabled="$(awk -F'\t' -v s="$scope" '$1==s && $2=="enabled" {print $3; exit}' "$tmp_scope_kv")"
+    [ -n "$enabled" ] || enabled="true"
+    if [ "$enabled" != "true" ]; then
+      printf '[pull] scope=%s skipped (disabled)\n' "$scope"
+      continue
+    fi
+
+    source_dir="$(awk -F'\t' -v s="$scope" '$1==s && $2=="source_dir" {print $3; exit}' "$tmp_scope_kv")"
+    target_dir="$(awk -F'\t' -v s="$scope" '$1==s && $2=="target_dir" {print $3; exit}' "$tmp_scope_kv")"
+    servers_csv="$(awk -F'\t' -v s="$scope" '$1==s && $2=="servers" {print $3; exit}' "$tmp_scope_kv")"
+    effective_hosts_csv="${hosts_override:-$servers_csv}"
+
+    if [ -z "$source_dir" ] || [ -z "$target_dir" ] || [ -z "$effective_hosts_csv" ]; then
+      warn "scope=${scope} skipped (needs source_dir, target_dir, and servers/--hosts)"
+      continue
+    fi
+
+    mkdir -p "$source_dir"
+
+    IFS=',' read -r -a hosts_arr <<< "$effective_hosts_csv"
+    for raw_host in "${hosts_arr[@]}"; do
+      host="$(printf '%s' "$raw_host" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+      [ -n "$host" ] || continue
+      local cmd
+      cmd="rsync ${rsync_opts} -- \"${host}:${target_dir%/}/\" \"${source_dir%/}/\""
+      if [ "$dry_run" -eq 1 ]; then
+        printf '[pull] dry-run scope=%s host=%s cmd=%s\n' "$scope" "$host" "$cmd"
+        success_count=$((success_count + 1))
+      elif eval "$cmd"; then
+        printf '[pull] scope=%s host=%s ok\n' "$scope" "$host"
+        success_count=$((success_count + 1))
+      else
+        warn "scope=${scope} host=${host} failed"
+        failed_count=$((failed_count + 1))
+      fi
+    done
+  done < "$scope_list_file"
+
+  if [ "$matched_scopes" -eq 0 ]; then
+    err "no matching scopes found"
+    return 1
+  fi
+
+  printf 'Pulled files into local source dirs (success=%d, failed=%d)\n' "$success_count" "$failed_count"
+  [ "$failed_count" -eq 0 ]
+}
+
 init_command() {
   local import_path=""
   local force=0
@@ -1635,6 +1768,10 @@ main() {
     deploy)
       shift
       deploy_command "$@"
+      ;;
+    pull)
+      shift
+      pull_command "$@"
       ;;
     diag)
       shift
