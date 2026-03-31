@@ -11,6 +11,9 @@ Usage:
   seraf plan
   seraf deploy --plan PATH [--dry-run] [--scope NAME] [--max-parallel N]
   seraf deploy --latest [--dry-run] [--scope NAME] [--max-parallel N]
+  seraf pull-logs [--settings PATH] [--hosts CSV] [--dest DIR]
+                  [--jboss-path PATH] [--apache-path PATH]
+                  [--engin-path PATH] [--smartxfr-path PATH]
   seraf help
 USAGE
 }
@@ -484,6 +487,132 @@ PY
   return "$overall_rc"
 }
 
+get_setting_value() {
+  local path="$1" key="$2"
+  awk -F'=' -v key="$key" '
+    function trim(s) { gsub(/^[[:space:]]+/, "", s); gsub(/[[:space:]]+$/, "", s); return s }
+    /^[[:space:]]*[;#]/ { next }
+    /^[[:space:]]*\[/ { next }
+    {
+      k=trim($1)
+      if (tolower(k) != tolower(key)) next
+      v=$0
+      sub(/^[^=]*=/, "", v)
+      print trim(v)
+      exit
+    }
+  ' "$path"
+}
+
+pull_logs_command() {
+  local settings_path="./settings.cfg"
+  local hosts_csv=""
+  local dest_dir=""
+  local jboss_path=""
+  local apache_path=""
+  local engin_path=""
+  local smartxfr_path=""
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --settings)
+        [ "$#" -ge 2 ] || { err "--settings requires a path"; return 2; }
+        settings_path="$2"
+        shift 2
+        ;;
+      --hosts)
+        [ "$#" -ge 2 ] || { err "--hosts requires a CSV value"; return 2; }
+        hosts_csv="$2"
+        shift 2
+        ;;
+      --dest)
+        [ "$#" -ge 2 ] || { err "--dest requires a path"; return 2; }
+        dest_dir="$2"
+        shift 2
+        ;;
+      --jboss-path)
+        [ "$#" -ge 2 ] || { err "--jboss-path requires a path"; return 2; }
+        jboss_path="$2"
+        shift 2
+        ;;
+      --apache-path)
+        [ "$#" -ge 2 ] || { err "--apache-path requires a path"; return 2; }
+        apache_path="$2"
+        shift 2
+        ;;
+      --engin-path)
+        [ "$#" -ge 2 ] || { err "--engin-path requires a path"; return 2; }
+        engin_path="$2"
+        shift 2
+        ;;
+      --smartxfr-path)
+        [ "$#" -ge 2 ] || { err "--smartxfr-path requires a path"; return 2; }
+        smartxfr_path="$2"
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      *)
+        err "unknown option: $1"
+        return 2
+        ;;
+    esac
+  done
+
+  if [ -f "$settings_path" ]; then
+    [ -n "$hosts_csv" ] || hosts_csv="$(get_setting_value "$settings_path" "log_hosts")"
+    [ -n "$dest_dir" ] || dest_dir="$(get_setting_value "$settings_path" "log_dest_dir")"
+    [ -n "$jboss_path" ] || jboss_path="$(get_setting_value "$settings_path" "jboss_log_path")"
+    [ -n "$apache_path" ] || apache_path="$(get_setting_value "$settings_path" "apache_log_path")"
+    [ -n "$engin_path" ] || engin_path="$(get_setting_value "$settings_path" "engin_log_path")"
+    [ -n "$smartxfr_path" ] || smartxfr_path="$(get_setting_value "$settings_path" "smartxfr_log_path")"
+  fi
+
+  [ -n "$hosts_csv" ] || { err "no log hosts configured; set log_hosts in settings.cfg or pass --hosts"; return 1; }
+  [ -n "$dest_dir" ] || dest_dir=".seraf/pulled-logs"
+
+  if [ -z "$jboss_path" ] && [ -z "$apache_path" ] && [ -z "$engin_path" ] && [ -z "$smartxfr_path" ]; then
+    err "no log paths configured; define jboss/apache/engin/smartxfr paths in settings.cfg or on command line"
+    return 1
+  fi
+
+  mkdir -p "$dest_dir"
+
+  local copied_count=0 failed_count=0 host raw_host
+  IFS=',' read -r -a hosts_arr <<< "$hosts_csv"
+  for raw_host in "${hosts_arr[@]}"; do
+    host="$(printf '%s' "$raw_host" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [ -n "$host" ] || continue
+    local host_dir="${dest_dir%/}/${host}"
+    mkdir -p "$host_dir"
+
+    pull_component_logs() {
+      local component="$1" remote_path="$2"
+      [ -n "$remote_path" ] || return 0
+      local component_dir
+      component_dir="${host_dir}/${component}"
+      mkdir -p "$component_dir"
+      if scp -q -r "${host}:${remote_path}" "$component_dir/" 2>"${component_dir}/.pull.err"; then
+        rm -f "${component_dir}/.pull.err"
+        copied_count=$((copied_count + 1))
+      else
+        warn "failed to pull ${component} logs from ${host}:${remote_path}"
+        failed_count=$((failed_count + 1))
+      fi
+    }
+
+    pull_component_logs "jboss" "$jboss_path"
+    pull_component_logs "apache" "$apache_path"
+    pull_component_logs "engin" "$engin_path"
+    pull_component_logs "smartxfr" "$smartxfr_path"
+  done
+
+  printf 'Pulled logs to %s (success=%d, failed=%d)\n' "$dest_dir" "$copied_count" "$failed_count"
+  [ "$failed_count" -eq 0 ]
+}
+
 init_command() {
   local import_path=""
   local force=0
@@ -679,7 +808,7 @@ init_command() {
   fi
 
   local unknowns
-  unknowns="$(awk -F'\t' '$1=="KV" && $3!="source_dir" && $3!="target_dir" && $3!="servers" && $3!="rsync_opts" && $3!="backup" && $3!="backup_suffix" {print $3}' "$tmp_kv" | sort -u || true)"
+  unknowns="$(awk -F'\t' '$1=="KV" && $3!="source_dir" && $3!="target_dir" && $3!="servers" && $3!="rsync_opts" && $3!="backup" && $3!="backup_suffix" && $3!="log_hosts" && $3!="log_dest_dir" && $3!="jboss_log_path" && $3!="apache_log_path" && $3!="engin_log_path" && $3!="smartxfr_log_path" {print $3}' "$tmp_kv" | sort -u || true)"
   if [ -n "$unknowns" ]; then
     while IFS= read -r k; do
       [ -n "$k" ] || continue
@@ -736,6 +865,12 @@ backup = true
 backup_suffix = .bkp
 remote_mkdir = true
 dry_run_default = false
+log_hosts =
+log_dest_dir = .seraf/pulled-logs
+jboss_log_path =
+apache_log_path =
+engin_log_path =
+smartxfr_log_path =
 
 [routing]
 env_from_filename_prefix = s:sys,q:qa,p:production
@@ -1234,6 +1369,10 @@ main() {
     deploy)
       shift
       deploy_command "$@"
+      ;;
+    pull-logs)
+      shift
+      pull_logs_command "$@"
       ;;
     help|-h|--help)
       usage
