@@ -3,6 +3,64 @@ set -euo pipefail
 IFS=$'\n\t'
 
 SERAF_VERSION="0.1"
+DIAG_TYPE_STRACE="strace"
+DIAG_TYPE_PYSPY="py-spy"
+DIAG_TYPE_AUSTIN="austin"
+
+read -r -d '' DIAG_HOSTS_M2_PROJECT <<'EOF' || true
+10.242.225.11	a70lscomm2ap001	cmsap1
+10.242.249.11	a70lscomm2db001	cmsdb1
+10.242.209.11	a70lscomm2pr001	cmspr1
+192.168.147.23	a70lppalutil001	util
+10.242.9.13	a70lpcomm2pr001	cmppr1	x
+10.242.9.14	a70lpcomm2pr002	cmppr2	x
+10.242.9.15	a70lpcomm2pr003	cmppr3
+10.242.25.27	a70lpcomm2ap001	cmpap1
+10.242.25.28	a70lpcomm2ap002	cmpap2
+10.242.25.35	a70lpcomm2cm001	cmpcm1	x
+10.242.25.31	a70lpcomm2tr001	cmptr1	x
+10.242.25.32	a70lpcomm2tr002	cmptr2	x
+10.242.25.33	a70lpcomm2tr003	cmptr3	x
+10.242.25.34	a70lpcomm2tr004	cmppr4	x
+10.242.41.12	a70lpcomm2db001	cmpdb1	x
+10.242.41.13	a70lpcomm2db002	cmpdb2	x
+10.242.9.11	a70lqcomm2pr001	cmqpr1
+10.242.9.12	a70lqcomm2pr002	cmqpr2	x
+10.242.25.15	a70lqcomm2ap001	cmqap1
+10.242.25.16	a70lqcomm2ap002	cmqap2
+10.242.25.19	a70lqcomm2cm001	cmqcm1
+10.242.25.17	a70lqcomm2tr001	cmqtr1
+10.242.25.18	a70lqcomm2tr002	cmqtr2
+10.242.41.11	a70lqcomm2db001	cmqdb1	x
+10.242.225.13	a70lscomm2cm001	cmscm1	x
+10.242.225.12	a70lscomm2tr001	cmstr1	x
+10.243.9.14	a70lppalm2ex001	pex1
+10.243.9.15	a70lppalm2ex002	pex2
+10.243.9.16	a70lppalm2ex003	pex3
+10.243.25.15	a70lppalm2in001	pin1
+10.243.25.16	a70lppalm2in002	pin2
+10.243.25.19	a70lppalm2tr001	ediptr1
+10.243.25.20	a70lppalm2tr002	ediptr2
+10.243.25.21	a70lppalm2tr003	ediptr3
+10.243.25.22	a70lppalm2tr004	ediptr4
+10.243.25.23	a70lppalm2tr005	ediptr5
+10.243.25.24	a70lppalm2tr006	ediptr6
+10.243.41.11	a70lppalm2or001	por1
+10.243.41.14	a70lppalm2or002	por2
+10.243.9.11	a70lqpalm2ex001	qex1
+10.243.9.12	a70lqpalm2ex002	qex2
+10.243.9.13	a70lqpalm2ex003	qex3
+10.243.25.13	a70lqpalm2in001	qin1
+10.243.25.14	a70lqpalm2in002	qin2
+10.243.25.17	a70lqpalm2tr001	ediqtr1
+10.243.25.18	a70lqpalm2tr002	ediqtr2
+10.243.41.12	a70lqpalm2or001	qor1
+10.243.209.11	a70lspalm2ex001	sex1
+10.243.225.11	a70lspalm2in001	sin1
+10.243.225.13	a70lspalm2tr001	edistr1
+10.243.241.11	a70lspalm2or001	sor1
+192.168.147.22	a70lppalenfs001	enfs
+EOF
 
 usage() {
   cat <<'USAGE'
@@ -11,6 +69,9 @@ Usage:
   seraf plan
   seraf deploy --plan PATH [--dry-run] [--scope NAME] [--max-parallel N]
   seraf deploy --latest [--dry-run] [--scope NAME] [--max-parallel N]
+  seraf diag [--project NAME] [--hosts CSV] [--diag-type NAME] [--pid PID]
+             [--duration SEC] [--remote-cmd CMD] [--out-dir DIR]
+             [--ssh-user USER] [--include-disabled] [--dry-run]
   seraf pull-logs [--settings PATH] [--hosts CSV] [--dest DIR]
                   [--jboss-path PATH] [--apache-path PATH]
                   [--engin-path PATH] [--smartxfr-path PATH]
@@ -502,6 +563,211 @@ get_setting_value() {
       exit
     }
   ' "$path"
+}
+
+resolve_diag_hosts_for_project() {
+  local project="$1" hosts_csv="$2" include_disabled="$3"
+  local tmp_input tmp_hosts raw_host
+  tmp_input="$(mktemp)"
+  tmp_hosts="$(mktemp)"
+  trap 'rm -f "${tmp_input:-}" "${tmp_hosts:-}"' RETURN
+
+  case "$project" in
+    m2-project)
+      printf '%s\n' "$DIAG_HOSTS_M2_PROJECT" > "$tmp_input"
+      ;;
+    *)
+      err "unsupported diag project inventory: ${project}"
+      return 1
+      ;;
+  esac
+
+  if [ -z "$hosts_csv" ] || [ "$hosts_csv" = "all" ]; then
+    hosts_csv="all"
+  fi
+
+  IFS=',' read -r -a hosts_arr <<< "$hosts_csv"
+  for raw_host in "${hosts_arr[@]}"; do
+    local host token_matched
+    host="$(printf '%s' "$raw_host" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [ -n "$host" ] || continue
+
+    if [ "$host" = "all" ]; then
+      awk -v include_disabled="$include_disabled" '
+        NF >= 3 {
+          disabled=(NF >= 4 && $4=="x") ? 1 : 0
+          if (!include_disabled && disabled) next
+          print $1
+        }
+      ' "$tmp_input" >> "$tmp_hosts"
+      continue
+    fi
+
+    token_matched="$(awk -v token="$host" -v include_disabled="$include_disabled" '
+      NF >= 3 {
+        disabled=(NF >= 4 && $4=="x") ? 1 : 0
+        if (!include_disabled && disabled) next
+        if ($1==token || $2==token || $3==token) {
+          print $1
+          found=1
+          exit
+        }
+      }
+      END { if (!found) exit 1 }
+    ' "$tmp_input" || true)"
+
+    if [ -z "$token_matched" ]; then
+      err "unknown or disabled host token for project ${project}: ${host}"
+      return 1
+    fi
+    printf '%s\n' "$token_matched" >> "$tmp_hosts"
+  done
+
+  awk '!seen[$0]++' "$tmp_hosts" | paste -sd',' -
+}
+
+diag_remote_command_for_type() {
+  local diag_type="$1" pid="$2" duration="$3"
+  case "$diag_type" in
+    "$DIAG_TYPE_STRACE")
+      printf 'timeout %s strace -f -tt -s 256 -p %s' "$duration" "$pid"
+      ;;
+    "$DIAG_TYPE_PYSPY")
+      printf 'timeout %s py-spy dump --pid %s --native --locals' "$duration" "$pid"
+      ;;
+    "$DIAG_TYPE_AUSTIN")
+      printf 'timeout %s austin -Cp %s' "$duration" "$pid"
+      ;;
+    *)
+      err "unsupported diag type: ${diag_type} (supported: ${DIAG_TYPE_STRACE}, ${DIAG_TYPE_PYSPY}, ${DIAG_TYPE_AUSTIN})"
+      return 1
+      ;;
+  esac
+}
+
+diag_command() {
+  local project_name=""
+  local hosts_csv=""
+  local diag_type="$DIAG_TYPE_STRACE"
+  local pid=""
+  local duration="20s"
+  local remote_cmd=""
+  local out_dir=""
+  local ssh_user=""
+  local include_disabled=0
+  local dry_run=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --project)
+        [ "$#" -ge 2 ] || { err "--project requires a value"; return 2; }
+        project_name="$2"
+        shift 2
+        ;;
+      --hosts)
+        [ "$#" -ge 2 ] || { err "--hosts requires a CSV value"; return 2; }
+        hosts_csv="$2"
+        shift 2
+        ;;
+      --diag-type)
+        [ "$#" -ge 2 ] || { err "--diag-type requires a value"; return 2; }
+        diag_type="$2"
+        shift 2
+        ;;
+      --pid)
+        [ "$#" -ge 2 ] || { err "--pid requires a value"; return 2; }
+        pid="$2"
+        shift 2
+        ;;
+      --duration)
+        [ "$#" -ge 2 ] || { err "--duration requires a value"; return 2; }
+        duration="$2"
+        shift 2
+        ;;
+      --remote-cmd)
+        [ "$#" -ge 2 ] || { err "--remote-cmd requires a value"; return 2; }
+        remote_cmd="$2"
+        shift 2
+        ;;
+      --out-dir)
+        [ "$#" -ge 2 ] || { err "--out-dir requires a value"; return 2; }
+        out_dir="$2"
+        shift 2
+        ;;
+      --ssh-user)
+        [ "$#" -ge 2 ] || { err "--ssh-user requires a value"; return 2; }
+        ssh_user="$2"
+        shift 2
+        ;;
+      --include-disabled)
+        include_disabled=1
+        shift
+        ;;
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      *)
+        err "unknown option: $1"
+        return 2
+        ;;
+    esac
+  done
+
+  if [ -n "$remote_cmd" ] && [ -n "$pid" ]; then
+    err "use either --remote-cmd or --pid/--diag-type, not both"
+    return 2
+  fi
+
+  if [ -z "$remote_cmd" ]; then
+    [ -n "$pid" ] || { err "--pid is required unless --remote-cmd is provided"; return 2; }
+    remote_cmd="$(diag_remote_command_for_type "$diag_type" "$pid" "$duration")" || return 1
+  fi
+
+  if [ -n "$project_name" ]; then
+    hosts_csv="$(resolve_diag_hosts_for_project "$project_name" "$hosts_csv" "$include_disabled")" || return 1
+  fi
+  [ -n "$hosts_csv" ] || { err "no hosts provided; use --hosts CSV or --project NAME"; return 2; }
+
+  [ -n "$out_dir" ] || out_dir=".seraf/diag/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  mkdir -p "$out_dir"
+
+  local run_manifest="${out_dir}/diag-run.tsv"
+  : > "$run_manifest"
+  printf 'host\trc\tstdout\tstderr\tcmd\n' >> "$run_manifest"
+
+  local overall_rc=0 host raw_host ssh_target rc host_stdout host_stderr
+  IFS=',' read -r -a hosts_arr <<< "$hosts_csv"
+  for raw_host in "${hosts_arr[@]}"; do
+    host="$(printf '%s' "$raw_host" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [ -n "$host" ] || continue
+    ssh_target="$host"
+    if [ -n "$ssh_user" ]; then
+      ssh_target="${ssh_user}@${host}"
+    fi
+
+    host_stdout="${out_dir}/${host}.stdout.log"
+    host_stderr="${out_dir}/${host}.stderr.log"
+    rc=0
+    if [ "$dry_run" -eq 1 ]; then
+      printf 'dry-run ssh %s %s\n' "$ssh_target" "$remote_cmd" > "$host_stdout"
+      : > "$host_stderr"
+    else
+      ssh "$ssh_target" "$remote_cmd" >"$host_stdout" 2>"$host_stderr" || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        overall_rc="$rc"
+      fi
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$host" "$rc" "$host_stdout" "$host_stderr" "$remote_cmd" >> "$run_manifest"
+    printf '[diag] host=%s rc=%s stdout=%s stderr=%s\n' "$host" "$rc" "$host_stdout" "$host_stderr"
+  done
+
+  printf '[diag] manifest=%s\n' "$run_manifest"
+  return "$overall_rc"
 }
 
 pull_logs_command() {
@@ -1369,6 +1635,10 @@ main() {
     deploy)
       shift
       deploy_command "$@"
+      ;;
+    diag)
+      shift
+      diag_command "$@"
       ;;
     pull-logs)
       shift
