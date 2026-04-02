@@ -376,10 +376,52 @@ assert state["last_success"]
 PY
 }
 
+test_dry_run_sys_to_qa_file_pull_with_sudo() {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' RETURN
+  make_workspace "$tmpdir"
+
+  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+import json,sys
+path=sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    plan=json.load(f)
+plan["scopes"][0]["steps"]=[
+    {
+      "id":"scope:web:0001",
+      "type":"rsync",
+      "host":"a70lqpalm2ex001",
+      "cmd":"ssh \"a70lspalm2ex001\" \"sudo cat /app/sxfrbridge3/file1\" | ssh \"a70lqpalm2ex001\" \"sudo tee /app/sxfrbridge3/file1 >/dev/null\""
+    }
+]
+with open(path,"w",encoding="utf-8") as f:
+    json.dump(plan,f,separators=(",",":"))
+PY
+
+  (
+    cd "$tmpdir"
+    "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web --dry-run >"$tmpdir/out.txt"
+  )
+
+  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
+  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
+import json,sys
+run=json.load(open(sys.argv[1]))
+assert run["rc"] == 0, run
+assert run["dry_run"] is True, run
+assert len(run["steps"]) == 1, run
+step=run["steps"][0]
+assert step["cmd"] == 'ssh "a70lspalm2ex001" "sudo cat /app/sxfrbridge3/file1" | ssh "a70lqpalm2ex001" "sudo tee /app/sxfrbridge3/file1 >/dev/null"', step
+assert step["rc"] == 0, step
+PY
+}
+
 assert_success_case
 assert_failure_case
 assert_zero_step_scope_updates_state
 assert_pipe_output_preserved
+test_dry_run_sys_to_qa_file_pull_with_sudo
 test_parallel_race_runjson_integrity
 assert_remote_cmd_barrier_ordering
 
