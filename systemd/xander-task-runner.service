@@ -1,0 +1,17 @@
+[Unit]
+Description=Xander Project Task Runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=floor2
+Group=floor2
+WorkingDirectory=/opt/xander-task-runner
+ExecStart=/usr/bin/python3 -m xander_task_runner.cli run-loop
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
