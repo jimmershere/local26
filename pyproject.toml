@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seraf"
+version = "0.1.0"
+description = "Seraf Python control plane"
+requires-python = ">=3.12"
+
+[project.scripts]
+seraf = "seraf.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]

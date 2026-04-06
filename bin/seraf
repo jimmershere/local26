@@ -1756,6 +1756,17 @@ plan_command() {
 
 main() {
   local cmd="${1:-help}"
+
+  if [ "$cmd" = "doctor" ] || [ "$cmd" = "status" ] || [ "$cmd" = "plan" ]; then
+    local repo_root python_src
+    repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    python_src="${repo_root}/src"
+    if command -v python3 >/dev/null 2>&1 && [ -d "$python_src" ]; then
+      PYTHONPATH="$python_src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m seraf.cli "$@"
+    fi
+  fi
+
+  local cmd="${1:-help}"
   case "$cmd" in
     init)
       shift
