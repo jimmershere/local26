@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .commands.doctor import run_doctor
+from .commands.init import run_init
 from .commands.plan import run_plan
 from .commands.status import run_status
 
@@ -10,6 +11,11 @@ from .commands.status import run_status
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="seraf")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    init = sub.add_parser("init")
+    init.add_argument("--import", dest="import_path", default=None)
+    init.add_argument("--force", action="store_true")
+    init.add_argument("--project", default=None)
 
     doctor = sub.add_parser("doctor")
     doctor.add_argument("--plan", default=None)
@@ -29,6 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    if args.command == "init":
+        return run_init(import_path=args.import_path, force=args.force, project=args.project)
     if args.command == "doctor":
         return run_doctor(plan=args.plan)
     if args.command == "status":
