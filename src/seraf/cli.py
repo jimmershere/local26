@@ -35,6 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
     deploy.add_argument("--scope", default=None)
     deploy.add_argument("--max-parallel", type=int, default=1)
     deploy.add_argument("--rollback-on-failure", action="store_true")
+    deploy.add_argument("--step-timeout", type=int, default=None)
+    deploy.add_argument("--fail-fast", dest="fail_fast", action="store_true")
+    deploy.add_argument("--no-fail-fast", dest="fail_fast", action="store_false")
+    deploy.set_defaults(fail_fast=False)
 
     return parser
 
@@ -51,7 +55,7 @@ def main() -> int:
     if args.command == "plan":
         return run_plan(only_scope=args.scope, output_format=args.format, print_stdout=args.stdout, ci_mode=args.ci, summary=args.summary)
     if args.command == "deploy":
-        return run_deploy(plan=args.plan, scope=args.scope, max_parallel=args.max_parallel, rollback_on_failure=args.rollback_on_failure)
+        return run_deploy(plan=args.plan, scope=args.scope, max_parallel=args.max_parallel, rollback_on_failure=args.rollback_on_failure, step_timeout=args.step_timeout, fail_fast=args.fail_fast)
     parser.error(f"unsupported command: {args.command}")
     return 2
 
