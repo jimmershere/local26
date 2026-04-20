@@ -191,4 +191,10 @@ def run_init(*, import_path: str | None = None, force: bool = False, project: st
         (state_dir / f'{scope.name}.json').write_text(json.dumps(state, separators=(',', ':')), encoding='utf-8')
 
     config_path.write_text('\n'.join(config_lines) + '\n', encoding='utf-8')
+    print('Seraf project initialized')
+    print('========================')
+    print(f"Imported {len(valid_scopes)} scope(s) from {legacy}.")
+    print(f"Default scope: {default_scope}")
+    print(f"Config written to: {config_path}")
+    print("Next good steps: run 'seraf doctor', then 'seraf plan --summary'.")
     return 0

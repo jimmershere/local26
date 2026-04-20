@@ -3,8 +3,12 @@ from __future__ import annotations
 import configparser
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 from .models import ScopeConfig
+from .profiles import load_profile_data, merge_profile
 
 
 @dataclass(slots=True)
@@ -18,6 +22,8 @@ class SerafConfig:
     routing_env_from_filename_prefix: str = "s:sys,q:qa,p:production"
     routing_env_from_server_name_char_at: int = 4
     routing_env_from_server_name_char_map: str = "s:sys,q:qa,p:production"
+    profile: str | None = None
+    notifications: dict[str, Any] = field(default_factory=dict)
 
 
 def _get_bool(parser: configparser.ConfigParser, section: str, option: str, fallback: bool) -> bool:
@@ -29,7 +35,7 @@ def _get_bool(parser: configparser.ConfigParser, section: str, option: str, fall
 def _scope_name(section: str, parser: configparser.ConfigParser) -> str | None:
     if section.startswith('scope "') and section.endswith('"'):
         return section[len('scope "'):-1]
-    if section in {"seraf", "defaults", "routing", "tools"}:
+    if section in {"seraf", "defaults", "routing", "tools", "notifications", "notification.telegram", "notification.email"}:
         return None
     required_like_scope = {"source_dir", "target_dir", "servers"}
     if required_like_scope.issubset(set(parser.options(section))):
@@ -37,51 +43,101 @@ def _scope_name(section: str, parser: configparser.ConfigParser) -> str | None:
     return None
 
 
-def load_config(path: str | Path = ".seraf/config.ini") -> SerafConfig:
+def _base_dict_from_ini(path: Path) -> dict[str, Any]:
     parser = configparser.ConfigParser(interpolation=None)
     parser.optionxform = str
-    path = Path(path)
-    if not path.is_file():
-        raise FileNotFoundError(path)
     parser.read(path, encoding="utf-8")
-
-    project = parser.get("seraf", "project", fallback=path.parent.parent.name)
-    default_rsync_opts = parser.get("defaults", "rsync_opts", fallback="-az")
-    default_backup = _get_bool(parser, "defaults", "backup", True)
-    default_backup_suffix = parser.get("defaults", "backup_suffix", fallback=".bkp")
-    default_remote_mkdir = _get_bool(parser, "defaults", "remote_mkdir", True)
-
-    routing_prefix = parser.get("routing", "env_from_filename_prefix", fallback="s:sys,q:qa,p:production")
-    routing_char_at = parser.getint("routing", "env_from_server_name_char_at", fallback=4)
-    routing_char_map = parser.get("routing", "env_from_server_name_char_map", fallback="s:sys,q:qa,p:production")
-
-    scopes: list[ScopeConfig] = []
+    scopes: dict[str, Any] = {}
     for section in parser.sections():
         name = _scope_name(section, parser)
         if not name:
             continue
+        scopes[name] = {
+            "enabled": _get_bool(parser, section, "enabled", True),
+            "source_dir": parser.get(section, "source_dir", fallback="."),
+            "target_dir": parser.get(section, "target_dir", fallback="."),
+            "servers": [s for s in parser.get(section, "servers", fallback="").split(",") if s],
+            "discovery": parser.get(section, "discovery", fallback="mtime_since_last_success"),
+            "rsync_opts": parser.get(section, "rsync_opts", fallback=parser.get("defaults", "rsync_opts", fallback="-az")),
+            "backup": _get_bool(parser, section, "backup", _get_bool(parser, "defaults", "backup", True)),
+            "backup_suffix": parser.get(section, "backup_suffix", fallback=parser.get("defaults", "backup_suffix", fallback=".bkp")),
+        }
+    return {
+        "seraf": {
+            "project": parser.get("seraf", "project", fallback=path.parent.parent.name),
+        },
+        "defaults": {
+            "rsync_opts": parser.get("defaults", "rsync_opts", fallback="-az"),
+            "backup": _get_bool(parser, "defaults", "backup", True),
+            "backup_suffix": parser.get("defaults", "backup_suffix", fallback=".bkp"),
+            "remote_mkdir": _get_bool(parser, "defaults", "remote_mkdir", True),
+        },
+        "routing": {
+            "env_from_filename_prefix": parser.get("routing", "env_from_filename_prefix", fallback="s:sys,q:qa,p:production"),
+            "env_from_server_name_char_at": parser.getint("routing", "env_from_server_name_char_at", fallback=4),
+            "env_from_server_name_char_map": parser.get("routing", "env_from_server_name_char_map", fallback="s:sys,q:qa,p:production"),
+        },
+        "notifications": {
+            "notify_on_success": _get_bool(parser, "notifications", "notify_on_success", False),
+            "telegram": {
+                "enabled": _get_bool(parser, "notification.telegram", "enabled", False),
+                "bot_token": parser.get("notification.telegram", "bot_token", fallback=""),
+                "chat_id": parser.get("notification.telegram", "chat_id", fallback=""),
+                "api_base": parser.get("notification.telegram", "api_base", fallback="https://api.telegram.org"),
+            },
+            "email": {
+                "enabled": _get_bool(parser, "notification.email", "enabled", False),
+                "to": parser.get("notification.email", "to", fallback=""),
+                "sendmail_bin": parser.get("notification.email", "sendmail_bin", fallback="sendmail"),
+                "subject_prefix": parser.get("notification.email", "subject_prefix", fallback="[Seraf]"),
+            },
+        },
+        "scopes": scopes,
+    }
+
+
+def _build_scope_configs(data: dict[str, Any], defaults: dict[str, Any]) -> list[ScopeConfig]:
+    scopes: list[ScopeConfig] = []
+    for name, values in (data.get("scopes") or {}).items():
+        values = values or {}
+        servers = values.get("servers", [])
+        if isinstance(servers, str):
+            servers = [s for s in servers.split(",") if s]
         scopes.append(
             ScopeConfig(
                 name=name,
-                enabled=_get_bool(parser, section, "enabled", True),
-                source_dir=Path(parser.get(section, "source_dir", fallback=".")),
-                target_dir=Path(parser.get(section, "target_dir", fallback=".")),
-                servers=[s for s in parser.get(section, "servers", fallback="").split(",") if s],
-                discovery=parser.get(section, "discovery", fallback="mtime_since_last_success"),
-                rsync_opts=parser.get(section, "rsync_opts", fallback=default_rsync_opts),
-                backup=_get_bool(parser, section, "backup", default_backup),
-                backup_suffix=parser.get(section, "backup_suffix", fallback=default_backup_suffix),
+                enabled=bool(values.get("enabled", True)),
+                source_dir=Path(values.get("source_dir", ".")),
+                target_dir=Path(values.get("target_dir", ".")),
+                servers=servers,
+                discovery=values.get("discovery", "mtime_since_last_success"),
+                rsync_opts=values.get("rsync_opts", defaults["rsync_opts"]),
+                backup=values.get("backup", defaults["backup"]),
+                backup_suffix=values.get("backup_suffix", defaults["backup_suffix"]),
             )
         )
+    return scopes
 
+
+def load_config(path: str | Path = ".seraf/config.ini", *, profile: str | None = None) -> SerafConfig:
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    base = _base_dict_from_ini(path)
+    if profile:
+        base = merge_profile(base, load_profile_data(profile, root=path.parent.parent))
+    defaults = base["defaults"]
+    routing = base["routing"]
     return SerafConfig(
-        project=project,
-        scopes=scopes,
-        default_rsync_opts=default_rsync_opts,
-        default_backup=default_backup,
-        default_backup_suffix=default_backup_suffix,
-        default_remote_mkdir=default_remote_mkdir,
-        routing_env_from_filename_prefix=routing_prefix,
-        routing_env_from_server_name_char_at=routing_char_at,
-        routing_env_from_server_name_char_map=routing_char_map,
+        project=base["seraf"].get("project", path.parent.parent.name),
+        scopes=_build_scope_configs(base, defaults),
+        default_rsync_opts=defaults.get("rsync_opts", "-az"),
+        default_backup=bool(defaults.get("backup", True)),
+        default_backup_suffix=defaults.get("backup_suffix", ".bkp"),
+        default_remote_mkdir=bool(defaults.get("remote_mkdir", True)),
+        routing_env_from_filename_prefix=routing.get("env_from_filename_prefix", "s:sys,q:qa,p:production"),
+        routing_env_from_server_name_char_at=int(routing.get("env_from_server_name_char_at", 4)),
+        routing_env_from_server_name_char_map=routing.get("env_from_server_name_char_map", "s:sys,q:qa,p:production"),
+        profile=profile,
+        notifications=base.get("notifications", {}),
     )

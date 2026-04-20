@@ -17,6 +17,8 @@ class SerafPaths:
     artifacts_dir: Path
     reports_dir: Path
     captures_dir: Path
+    hooks_dir: Path
+    profiles_dir: Path
 
 
 def build_paths(root: str | Path = ".") -> SerafPaths:
@@ -34,6 +36,8 @@ def build_paths(root: str | Path = ".") -> SerafPaths:
         artifacts_dir=seraf_dir / "artifacts",
         reports_dir=seraf_dir / "reports",
         captures_dir=seraf_dir / "captures",
+        hooks_dir=seraf_dir / "hooks",
+        profiles_dir=seraf_dir / "profiles",
     )
 
 
@@ -48,6 +52,8 @@ def ensure_runtime_dirs(root: str | Path = ".") -> SerafPaths:
         paths.artifacts_dir,
         paths.reports_dir,
         paths.captures_dir,
+        paths.hooks_dir,
+        paths.profiles_dir,
     ]:
         path.mkdir(parents=True, exist_ok=True)
     return paths

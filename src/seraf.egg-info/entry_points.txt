@@ -1,0 +1,2 @@
+[console_scripts]
+seraf = seraf.cli:main
