@@ -37,5 +37,5 @@ def test_run_doctor_warns_for_missing_project_dirs(tmp_path: Path, monkeypatch, 
     rc = run_doctor()
     out = capsys.readouterr().out
     assert "dir:.seraf" in out
-    assert "[WARN]" in out
+    assert "[warn]" in out
     assert rc in (0, 1)

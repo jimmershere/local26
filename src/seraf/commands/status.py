@@ -67,21 +67,24 @@ def load_status_record() -> StatusRecord:
 def render_status() -> str:
     record = load_status_record()
     lines = [
-        "=== seraf status ===",
+        "Seraf status",
+        "============",
         "",
         "Active runs:",
-        "  (none)",
+        "  None right now.",
         "",
-        "Last run:",
+        "Latest run:",
     ]
     if not record.run_id:
-        lines.append("  (no runs found)")
+        lines.append("  No completed runs found yet.")
+        lines.append("")
+        lines.append("Once you generate a plan and deploy it, the latest result will show up here.")
     else:
         lines.extend([
-            f"  run_id    : {record.run_id}",
-            f"  result    : {record.result or '(unknown)'}",
-            f"  exit_code : {record.last_rc if record.last_rc is not None else '(unknown)'}",
-            f"  timestamp : {record.last_run_at or '(unknown)'}",
+            f"  Run ID: {record.run_id}",
+            f"  Result: {record.result or '(unknown)'}",
+            f"  Exit code: {record.last_rc if record.last_rc is not None else '(unknown)'}",
+            f"  Finished: {record.last_run_at or '(unknown)'}",
         ])
     return "\n".join(lines)
 

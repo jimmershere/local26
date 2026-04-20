@@ -171,6 +171,33 @@ def _build_scope(scope, cfg, only_scope: str | None = None) -> dict | None:
     }
 
 
+def _render_summary(plan: dict, plan_path: Path) -> str:
+    lines = [
+        'Seraf plan summary',
+        '==================',
+        f"Plan ID: {plan['plan_id']}",
+        f"Saved to: {plan_path}",
+        '',
+    ]
+    if not plan['scopes']:
+        lines.append('No scopes matched the request.')
+        return '\n'.join(lines)
+    total_steps = 0
+    for scope in plan['scopes']:
+        counts = scope['summary']['counts']
+        total_steps += len(scope['steps'])
+        lines.extend([
+            f"Scope: {scope['scope']}",
+            f"  Servers: {', '.join(scope['inputs']['servers']) or '(none)'}",
+            f"  Files selected: {scope['discovery']['files_selected']} of {scope['discovery']['files_found']}",
+            f"  Steps: {len(scope['steps'])} total, {counts['mkdir_steps']} mkdir, {counts['rsync_steps']} rsync",
+            f"  Backup-enabled steps: {counts['rollbackable_steps']}",
+            '',
+        ])
+    lines.append(f'Total steps across plan: {total_steps}')
+    return '\n'.join(lines)
+
+
 def run_plan(*, only_scope: str | None = None, output_format: str = 'json', print_stdout: bool = False, ci_mode: bool = False, summary: bool = False) -> int:
     if output_format != 'json':
         raise SystemExit(2)
@@ -201,9 +228,7 @@ def run_plan(*, only_scope: str | None = None, output_format: str = 'json', prin
         plan_path.write_text(json.dumps(plan, separators=(',', ':')), encoding='utf-8')
 
     if summary:
-        for scope in plan['scopes']:
-            for step in scope['steps']:
-                print(f"{step['id']} | {step['type']} | - | pending")
+        print(_render_summary(plan, plan_path))
         return 0
 
     payload = json.dumps(plan, separators=(',', ':'))

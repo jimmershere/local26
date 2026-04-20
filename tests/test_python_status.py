@@ -10,9 +10,9 @@ def test_status_no_runs(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".seraf" / "runs").mkdir(parents=True)
     out = render_status()
-    assert "seraf status" in out
-    assert "(none)" in out
-    assert "(no runs found)" in out
+    assert "Seraf status" in out
+    assert "None right now" in out
+    assert "No completed runs found yet" in out
 
 
 def test_status_reads_latest_run(tmp_path: Path, monkeypatch) -> None:

@@ -1,0 +1,15 @@
+/home/jimmer/projects/xander-llamafactory
+/home/jimmer/.config/chromium/Default/IndexedDB/https_budget.xander.local_0.indexeddb.leveldb
+/home/jimmer/xander-caddy-root.crt
+/home/jimmer/.openclaw/workspace/skills/tok-pov/scripts/clawfactory_xander_test.py
+/home/jimmer/.openclaw/workspace/docs/xander-service-map-2026-04-05.md
+/home/jimmer/.openclaw/workspace/docs/xander-lab-notes-2026-04-05.md
+/home/jimmer/.openclaw/workspace/docs/xander-autostart-plan-2026-04-05.md
+/home/jimmer/.openclaw/workspace/docs/xander-Caddyfile
+/home/jimmer/.openclaw/workspace/docs/xander-caddy-compose.yml
+/home/jimmer/.openclaw/workspace/docs/xander-reverse-proxy-runbook-2026-04-05.md
+/home/jimmer/.openclaw/workspace/docs/xander-reverse-proxy-plan-2026-04-05.md
+/home/jimmer/.openclaw/workspace/xander-lab-bootstrap.sh
+/home/jimmer/.openclaw/workspace/clawfactory_xander_test.mp4
+/home/jimmer/.openclaw/workspace/.brv/context-tree/architecture/xander
+/home/jimmer/.local/share/brv/projects/home--jimmer--.openclaw--workspace/keystore/message/task-query-summary_architecture_xander

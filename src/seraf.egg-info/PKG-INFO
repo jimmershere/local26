@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: seraf
+Version: 0.1.0
+Summary: Seraf Python control plane
+Requires-Python: >=3.12
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"

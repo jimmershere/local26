@@ -1,0 +1,4 @@
+/app/giles/seraf/floor2.txt
+/home/jimmer/.ssh/floor2_key.pub
+/home/jimmer/.ssh/floor2_key
+/home/jimmer/.openclaw/secrets/floor2.env
