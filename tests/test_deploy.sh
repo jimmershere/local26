@@ -340,6 +340,25 @@ assert remote_idx < c_start, lines
 PY2
 }
 
+assert_deploy_latest_uses_newest_plan() {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' RETURN
+  make_workspace "$tmpdir"
+
+  cp "$tmpdir/.seraf/plans/test.plan.json" "$tmpdir/.seraf/plans/20260430T010101Z-old.plan.json"
+  cp "$tmpdir/.seraf/plans/test.plan.json" "$tmpdir/.seraf/plans/20260501T020202Z-new.plan.json"
+  rm -f "$tmpdir/.seraf/plans/test.plan.json"
+
+  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  (
+    cd "$tmpdir"
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --latest --scope web --max-parallel 1 >"$tmpdir/out.txt"
+  )
+
+  grep -q '.seraf/plans/20260501T020202Z-new.plan.json' "$tmpdir/out.txt"
+}
+
 assert_zero_step_scope_updates_state() {
   local tmpdir
   tmpdir="$(mktemp -d)"
@@ -419,6 +438,7 @@ PY
 
 assert_success_case
 assert_failure_case
+assert_deploy_latest_uses_newest_plan
 assert_zero_step_scope_updates_state
 assert_pipe_output_preserved
 test_dry_run_sys_to_qa_file_pull_with_sudo

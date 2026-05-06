@@ -39,7 +39,7 @@ seraf deploy --plan .seraf/plans/<plan-id>.plan.json --scope main
 ```
 
 ## `seraf deploy` says no matching scopes were found
-The `--scope` value must match a scope present in the plan. Recheck the scope name in `.seraf/config.ini` or regenerate the plan.
+The `--scope` value must match a scope present in the plan. Recheck the scope name in `.seraf/config.ini` or `.seraf/config.yaml`, or regenerate the plan.
 
 ## A deploy step fails
 Seraf writes the failing step into the latest run record. Inspect:
@@ -65,6 +65,20 @@ Use all of these together:
 - `max_parallel = 1`
 - `seraf deploy --dry-run`
 - `seraf deploy --fail-fast`
+
+## `seraf pull` does not target the hosts I expected
+Check:
+- the scope name is correct
+- the config or profile actually contains those hosts
+- `--hosts` uses a comma-separated host list
+- use `--dry-run` first before assuming Seraf will pull what you meant
+
+## `seraf diag` feels too broad for a first try
+Start smaller:
+- pass one host with `--hosts`
+- use `--dry-run`
+- add `--pid` only when you know the target process
+- keep duration short, for example `--duration 20s`
 
 ## Where to look when confused
 In order:

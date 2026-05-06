@@ -4,7 +4,9 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, TextIO
+from typing import IO, Any, TextIO
+
+import yaml
 
 
 @dataclass(slots=True)
@@ -15,6 +17,7 @@ class GuidedAnswers:
     target_dir: str = ""
     remote_mkdir: bool = True
     servers: str = ""
+    rsync_opts: str = "-az"
     fail_fast: bool = True
     backup: bool = True
     backup_suffix: str = ".bkp"
@@ -26,8 +29,10 @@ class GuidedAnswers:
     smartxfr_log_path: str = ""
 
 
-def _section(title: str, *, out: TextIO = sys.stdout) -> None:
+def _section(title: str, subtitle: str | None = None, *, out: TextIO = sys.stdout) -> None:
     out.write(f"\n== {title} ==\n")
+    if subtitle:
+        out.write(f"{subtitle}\n")
 
 
 def _prompt(message: str, default: str = "", *, inp: IO[str] = sys.stdin, out: TextIO = sys.stdout) -> str:
@@ -77,11 +82,65 @@ def _normalize_servers(raw: str) -> str:
     tokens = raw.replace(",", " ").split()
     seen: set[str] = set()
     deduped: list[str] = []
-    for t in tokens:
-        if t not in seen:
-            seen.add(t)
-            deduped.append(t)
+    for token in tokens:
+        if token not in seen:
+            seen.add(token)
+            deduped.append(token)
     return ",".join(deduped)
+
+
+def _build_config_payload(answers: GuidedAnswers) -> dict[str, Any]:
+    return {
+        "seraf": {
+            "version": "0.1",
+            "project": answers.project,
+            "default_scope": answers.scope_name,
+            "state_dir": ".seraf/state",
+            "plans_dir": ".seraf/plans",
+            "runs_dir": ".seraf/runs",
+            "logs_dir": ".seraf/logs",
+            "lock_file": ".seraf/seraf.lock",
+            "require_plan_for_deploy": True,
+            "fail_fast": answers.fail_fast,
+            "max_parallel": answers.max_parallel,
+            "shell": "/usr/bin/bash",
+        },
+        "tools": {
+            "ssh": "/usr/bin/ssh",
+            "rsync": "/usr/bin/rsync",
+            "find": "/usr/bin/find",
+        },
+        "defaults": {
+            "rsync_opts": answers.rsync_opts,
+            "backup": answers.backup,
+            "backup_suffix": answers.backup_suffix,
+            "remote_mkdir": answers.remote_mkdir,
+            "dry_run_default": False,
+            "log_hosts": answers.log_hosts,
+            "log_dest_dir": ".seraf/pulled-logs",
+            "jboss_log_path": answers.jboss_log_path,
+            "apache_log_path": answers.apache_log_path,
+            "engin_log_path": answers.engin_log_path,
+            "smartxfr_log_path": answers.smartxfr_log_path,
+        },
+        "routing": {
+            "env_from_filename_prefix": "s:sys,q:qa,p:production",
+            "env_from_server_name_char_at": 4,
+            "env_from_server_name_char_map": "s:sys,q:qa,p:production",
+        },
+        "scopes": {
+            answers.scope_name: {
+                "enabled": True,
+                "source_dir": answers.source_dir,
+                "target_dir": answers.target_dir,
+                "servers": answers.servers.split(",") if answers.servers else [],
+                "discovery": "mtime_since_last_success",
+                "rsync_opts": answers.rsync_opts,
+                "backup": answers.backup,
+                "backup_suffix": answers.backup_suffix,
+            }
+        },
+    }
 
 
 def run_guided_interview(*, inp: IO[str] = sys.stdin, out: TextIO = sys.stdout) -> GuidedAnswers | None:
@@ -89,14 +148,14 @@ def run_guided_interview(*, inp: IO[str] = sys.stdin, out: TextIO = sys.stdout) 
     cwd_name = Path.cwd().name
 
     out.write("\nWelcome to Seraf guided setup.\n")
-    out.write("I'll help you build a working config for this project. We'll keep it simple: project name, scope, source, target, servers, and a few safety defaults. You can review everything before anything is written.\n")
+    out.write("I'll walk with you through one clean deploy path, then show you the config before anything is written.\n")
 
-    _section("Project identity", out=out)
-    answers.project = _prompt("What should this project be called?", cwd_name, inp=inp, out=out)
-    answers.scope_name = _prompt("What should the default scope be called?", "main", inp=inp, out=out)
+    _section("Project identity", "Let's name the project and the first deploy scope.", out=out)
+    answers.project = _prompt("Project name", cwd_name, inp=inp, out=out)
+    answers.scope_name = _prompt("Default scope name", "main", inp=inp, out=out)
 
-    _section("Deployment source", out=out)
-    answers.source_dir = _prompt("What local directory should Seraf deploy from?", inp=inp, out=out)
+    _section("Deployment source", "Point Seraf at the local files you actually want to ship.", out=out)
+    answers.source_dir = _prompt("Local source directory", inp=inp, out=out)
     if not answers.source_dir:
         out.write("I still need a source directory to build a usable config.\n")
         answers.source_dir = _prompt("Please enter the local source directory", inp=inp, out=out)
@@ -110,7 +169,7 @@ def run_guided_interview(*, inp: IO[str] = sys.stdin, out: TextIO = sys.stdout) 
         out.write(f"Using source directory: {source_path}\n")
     else:
         keep_going = _prompt_bool(
-            f"I can't find {answers.source_dir} yet. Continue anyway and keep it as a placeholder?",
+            f"I can't find {answers.source_dir} yet. Keep it as a placeholder for now?",
             True,
             inp=inp,
             out=out,
@@ -121,65 +180,79 @@ def run_guided_interview(*, inp: IO[str] = sys.stdin, out: TextIO = sys.stdout) 
                 out.write("Stopping here so we do not write a broken config.\n")
                 return None
 
-    _section("Deployment target", out=out)
-    answers.target_dir = _prompt("What remote target directory should files land in?", inp=inp, out=out)
+    _section("Deployment target", "Now the remote side.", out=out)
+    answers.target_dir = _prompt("Remote target directory", inp=inp, out=out)
     if not answers.target_dir:
         out.write("I still need a target directory to finish the config.\n")
         answers.target_dir = _prompt("Please enter the remote target directory", inp=inp, out=out)
         if not answers.target_dir:
             out.write("Stopping here so we do not write a broken config.\n")
             return None
-    answers.remote_mkdir = _prompt_bool("Should Seraf create missing remote directories automatically?", True, inp=inp, out=out)
+    answers.remote_mkdir = _prompt_bool("Create missing remote directories automatically?", True, inp=inp, out=out)
 
-    _section("Servers", out=out)
-    raw_servers = _prompt("Which servers should this scope deploy to?", inp=inp, out=out)
+    _section("Targets", "Tell me where this scope should go.", out=out)
+    raw_servers = _prompt("Target host(s)", inp=inp, out=out)
     if not raw_servers:
-        out.write("I need at least one server before we can move on.\n")
-        raw_servers = _prompt("Please enter one or more servers", inp=inp, out=out)
+        out.write("I need at least one host before we can move on.\n")
+        raw_servers = _prompt("Please enter one or more target hosts", inp=inp, out=out)
         if not raw_servers:
             out.write("Stopping here so we do not write a broken config.\n")
             return None
     answers.servers = _normalize_servers(raw_servers)
-    out.write(f"Normalized server list: {answers.servers}\n")
+    out.write(f"Normalized target hosts: {answers.servers}\n")
 
-    _section("Safety defaults", out=out)
+    _section("Transfer and safety", "We'll set the defaults you are most likely to care about on day one.", out=out)
+    answers.rsync_opts = _prompt("Rsync options", "-az", inp=inp, out=out)
     answers.fail_fast = _prompt_bool("Stop on the first failure?", True, inp=inp, out=out)
     answers.backup = _prompt_bool("Create backups before overwriting files?", True, inp=inp, out=out)
     if answers.backup:
         answers.backup_suffix = _prompt("Backup suffix", ".bkp", inp=inp, out=out)
     answers.max_parallel = _prompt_int("Maximum parallel workers (1 is a cautious first deploy)", 4, inp=inp, out=out)
 
-    _section("Logs and diagnostics", out=out)
-    want_logs = _prompt_bool("Do you want to set default log hosts now?", False, inp=inp, out=out)
+    _section("Logs and diagnostics", "Optional now, handy later.", out=out)
+    want_logs = _prompt_bool("Set default log hosts now?", False, inp=inp, out=out)
     if want_logs:
         answers.log_hosts = _normalize_servers(_prompt("Log hosts", inp=inp, out=out))
-        want_paths = _prompt_bool("Do you know the common log paths now?", False, inp=inp, out=out)
+        want_paths = _prompt_bool("Do you already know the common log paths?", False, inp=inp, out=out)
         if want_paths:
             answers.jboss_log_path = _prompt("JBoss log path", inp=inp, out=out)
             answers.apache_log_path = _prompt("Apache log path", inp=inp, out=out)
             answers.engin_log_path = _prompt("Engin log path", inp=inp, out=out)
             answers.smartxfr_log_path = _prompt("SmartXFR log path", inp=inp, out=out)
     else:
-        out.write("No problem, we can leave logs for later.\n")
+        out.write("No problem. We can leave logs for later.\n")
 
+    _section("Review", None, out=out)
+    out.write(f"Project: {answers.project}\n")
+    out.write(f"Scope: {answers.scope_name}\n")
+    out.write(f"Source -> target: {answers.source_dir} -> {answers.target_dir}\n")
+    out.write(f"Hosts: {answers.servers}\n")
+    out.write(f"Rsync: {answers.rsync_opts}\n")
+    out.write(f"Backups: {'on' if answers.backup else 'off'}\n")
+    out.write(f"Max parallel: {answers.max_parallel}\n")
     return answers
 
 
 def generate_config(answers: GuidedAnswers) -> str:
+    payload = _build_config_payload(answers)
+    defaults = payload["defaults"]
+    seraf = payload["seraf"]
+    routing = payload["routing"]
+    scope = payload["scopes"][answers.scope_name]
     lines = [
         "[seraf]",
-        "version = 0.1",
-        f"project = {answers.project}",
-        f"default_scope = {answers.scope_name}",
-        "state_dir = .seraf/state",
-        "plans_dir = .seraf/plans",
-        "runs_dir = .seraf/runs",
-        "logs_dir = .seraf/logs",
-        "lock_file = .seraf/seraf.lock",
-        "require_plan_for_deploy = true",
-        f"fail_fast = {'true' if answers.fail_fast else 'false'}",
-        f"max_parallel = {answers.max_parallel}",
-        "shell = /usr/bin/bash",
+        f"version = {seraf['version']}",
+        f"project = {seraf['project']}",
+        f"default_scope = {seraf['default_scope']}",
+        f"state_dir = {seraf['state_dir']}",
+        f"plans_dir = {seraf['plans_dir']}",
+        f"runs_dir = {seraf['runs_dir']}",
+        f"logs_dir = {seraf['logs_dir']}",
+        f"lock_file = {seraf['lock_file']}",
+        f"require_plan_for_deploy = {'true' if seraf['require_plan_for_deploy'] else 'false'}",
+        f"fail_fast = {'true' if seraf['fail_fast'] else 'false'}",
+        f"max_parallel = {seraf['max_parallel']}",
+        f"shell = {seraf['shell']}",
         "",
         "[tools]",
         "ssh = /usr/bin/ssh",
@@ -187,51 +260,57 @@ def generate_config(answers: GuidedAnswers) -> str:
         "find = /usr/bin/find",
         "",
         "[defaults]",
-        "rsync_opts = -az",
-        f"backup = {'true' if answers.backup else 'false'}",
-        f"backup_suffix = {answers.backup_suffix}",
-        f"remote_mkdir = {'true' if answers.remote_mkdir else 'false'}",
+        f"rsync_opts = {defaults['rsync_opts']}",
+        f"backup = {'true' if defaults['backup'] else 'false'}",
+        f"backup_suffix = {defaults['backup_suffix']}",
+        f"remote_mkdir = {'true' if defaults['remote_mkdir'] else 'false'}",
         "dry_run_default = false",
-        f"log_hosts = {answers.log_hosts}",
-        "log_dest_dir = .seraf/pulled-logs",
-        f"jboss_log_path = {answers.jboss_log_path}",
-        f"apache_log_path = {answers.apache_log_path}",
-        f"engin_log_path = {answers.engin_log_path}",
-        f"smartxfr_log_path = {answers.smartxfr_log_path}",
+        f"log_hosts = {defaults['log_hosts']}",
+        f"log_dest_dir = {defaults['log_dest_dir']}",
+        f"jboss_log_path = {defaults['jboss_log_path']}",
+        f"apache_log_path = {defaults['apache_log_path']}",
+        f"engin_log_path = {defaults['engin_log_path']}",
+        f"smartxfr_log_path = {defaults['smartxfr_log_path']}",
         "",
         "[routing]",
-        "env_from_filename_prefix = s:sys,q:qa,p:production",
-        "env_from_server_name_char_at = 4",
-        "env_from_server_name_char_map = s:sys,q:qa,p:production",
+        f"env_from_filename_prefix = {routing['env_from_filename_prefix']}",
+        f"env_from_server_name_char_at = {routing['env_from_server_name_char_at']}",
+        f"env_from_server_name_char_map = {routing['env_from_server_name_char_map']}",
         "",
         f'[scope "{answers.scope_name}"]',
         "enabled = true",
-        f"source_dir = {answers.source_dir}",
-        f"target_dir = {answers.target_dir}",
-        f"servers = {answers.servers}",
-        "discovery = mtime_since_last_success",
-        "rsync_opts = -az",
-        f"backup = {'true' if answers.backup else 'false'}",
-        f"backup_suffix = {answers.backup_suffix}",
+        f"source_dir = {scope['source_dir']}",
+        f"target_dir = {scope['target_dir']}",
+        f"servers = {','.join(scope['servers'])}",
+        f"discovery = {scope['discovery']}",
+        f"rsync_opts = {scope['rsync_opts']}",
+        f"backup = {'true' if scope['backup'] else 'false'}",
+        f"backup_suffix = {scope['backup_suffix']}",
         "",
     ]
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines)
+
+
+def generate_config_yaml(answers: GuidedAnswers) -> str:
+    return yaml.safe_dump(_build_config_payload(answers), sort_keys=False)
 
 
 def preview_config(config_text: str, *, out: TextIO = sys.stdout) -> None:
-    _section("Config preview", out=out)
+    _section("Config preview", "This is the INI form Seraf uses today. A YAML mirror will be written too.", out=out)
     for line in config_text.splitlines():
         out.write(f"  {line}\n")
     out.write("\n")
 
 
-def _write_project_files(answers: GuidedAnswers, config_text: str, *, out: TextIO = sys.stdout) -> int:
+def _write_project_files(answers: GuidedAnswers, config_text: str, config_yaml: str, *, out: TextIO = sys.stdout) -> int:
     seraf_dir = Path(".seraf")
-    config_path = seraf_dir / "config.ini"
+    config_ini_path = seraf_dir / "config.ini"
+    config_yaml_path = seraf_dir / "config.yaml"
     seraf_dir.mkdir(parents=True, exist_ok=True)
     for sub in ("state", "plans", "runs", "logs"):
         (seraf_dir / sub).mkdir(parents=True, exist_ok=True)
-    config_path.write_text(config_text, encoding="utf-8")
+    config_ini_path.write_text(config_text, encoding="utf-8")
+    config_yaml_path.write_text(config_yaml, encoding="utf-8")
 
     state = {
         "schema": "seraf.state.v0.1",
@@ -244,16 +323,19 @@ def _write_project_files(answers: GuidedAnswers, config_text: str, *, out: TextI
     state_file = seraf_dir / "state" / f"{answers.scope_name}.json"
     state_file.write_text(json.dumps(state, separators=(",", ":")), encoding="utf-8")
 
-    out.write(f"Wrote {config_path}.\n")
+    out.write(f"Wrote {config_ini_path}.\n")
+    out.write(f"Wrote {config_yaml_path}.\n")
     out.write(f"Seraf is ready for project '{answers.project}' with default scope '{answers.scope_name}'.\n")
     out.write("Next good steps: run 'seraf doctor', then 'seraf plan --summary'.\n")
     return 0
 
 
 def run_guided(*, force: bool = False, inp: IO[str] = sys.stdin, out: TextIO = sys.stdout) -> int:
-    config_path = Path(".seraf") / "config.ini"
-    if config_path.exists() and not force:
-        out.write(f"seraf: {config_path} already exists; rerun with --force\n")
+    seraf_dir = Path(".seraf")
+    config_ini_path = seraf_dir / "config.ini"
+    config_yaml_path = seraf_dir / "config.yaml"
+    if (config_ini_path.exists() or config_yaml_path.exists()) and not force:
+        out.write(f"seraf: {config_ini_path} or {config_yaml_path} already exists; rerun with --force\n")
         return 1
 
     while True:
@@ -263,6 +345,7 @@ def run_guided(*, force: bool = False, inp: IO[str] = sys.stdin, out: TextIO = s
             return 1
 
         config_text = generate_config(answers)
+        config_yaml = generate_config_yaml(answers)
         preview_config(config_text, out=out)
         choice = _prompt("Write this config now? (write / edit / cancel)", "write", inp=inp, out=out).strip().lower()
         if choice == "cancel":
@@ -271,4 +354,4 @@ def run_guided(*, force: bool = False, inp: IO[str] = sys.stdin, out: TextIO = s
         if choice == "edit":
             out.write("Okay, let's run through it once more.\n")
             continue
-        return _write_project_files(answers, config_text, out=out)
+        return _write_project_files(answers, config_text, config_yaml, out=out)

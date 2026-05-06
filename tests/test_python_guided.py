@@ -3,17 +3,14 @@ from __future__ import annotations
 import io
 import json
 import os
-import tempfile
 from configparser import ConfigParser
-from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from seraf.commands.guided import (
     GuidedAnswers,
     _normalize_servers,
     generate_config,
+    generate_config_yaml,
+    preview_config,
     run_guided,
     run_guided_interview,
 )
@@ -72,6 +69,7 @@ def test_generate_config_values():
         source_dir="/app/src",
         target_dir="/opt/deploy",
         servers="web1,web2",
+        rsync_opts="-az --delete",
         fail_fast=False,
         backup=True,
         backup_suffix=".old",
@@ -88,10 +86,12 @@ def test_generate_config_values():
     assert cp["defaults"]["backup"] == "true"
     assert cp["defaults"]["backup_suffix"] == ".old"
     assert cp["defaults"]["remote_mkdir"] == "false"
+    assert cp["defaults"]["rsync_opts"] == "-az --delete"
     scope = cp['scope "deploy"']
     assert scope["source_dir"] == "/app/src"
     assert scope["target_dir"] == "/opt/deploy"
     assert scope["servers"] == "web1,web2"
+    assert scope["rsync_opts"] == "-az --delete"
 
 
 def test_generate_config_no_backup():
@@ -119,7 +119,6 @@ def test_generate_config_log_hosts():
 
 
 def test_generate_config_constant_defaults():
-    """Constant defaults from the design doc should always be present."""
     answers = GuidedAnswers(
         project="p", scope_name="main", source_dir="/s", target_dir="/t",
         servers="h1",
@@ -139,6 +138,22 @@ def test_generate_config_constant_defaults():
     assert scope["discovery"] == "mtime_since_last_success"
 
 
+def test_generate_config_yaml_matches_answers():
+    answers = GuidedAnswers(
+        project="yamlproj",
+        scope_name="main",
+        source_dir="/srv/app",
+        target_dir="/opt/app",
+        servers="web1,web2",
+        rsync_opts="-az --delete",
+    )
+    payload = generate_config_yaml(answers)
+    assert "project: yamlproj" in payload
+    assert "default_scope: main" in payload
+    assert "rsync_opts: -az --delete" in payload
+    assert "- web1" in payload
+
+
 # ---------------------------------------------------------------------------
 # Integration: interview flow with simulated input
 # ---------------------------------------------------------------------------
@@ -147,29 +162,36 @@ def _make_input(lines: list[str]) -> io.StringIO:
     return io.StringIO("\n".join(lines) + "\n")
 
 
-def test_interview_all_defaults():
-    # Accept all defaults where possible, provide required fields
+def test_interview_all_defaults(tmp_path):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
     inp = _make_input([
-        "",              # project name -> cwd name
-        "",              # scope name -> main
-        "/app/source",   # source dir
-        "y",             # continue with placeholder source
-        "/opt/target",   # target dir
-        "y",             # remote mkdir
-        "web1,web2",     # servers
-        "y",             # fail fast
-        "y",             # backup
-        "",              # backup suffix -> .bkp
-        "",              # max parallel -> 4
-        "n",             # log hosts -> skip
+        "",                      # project name -> cwd name
+        "",                      # scope name -> main
+        str(source_dir),          # source dir
+        "/opt/target",           # target dir
+        "y",                     # remote mkdir
+        "web1,web2",             # servers
+        "",                      # rsync opts -> -az
+        "y",                     # fail fast
+        "y",                     # backup
+        "",                      # backup suffix -> .bkp
+        "",                      # max parallel -> 4
+        "n",                     # log hosts -> skip
     ])
     out = io.StringIO()
-    answers = run_guided_interview(inp=inp, out=out)
+    original = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        answers = run_guided_interview(inp=inp, out=out)
+    finally:
+        os.chdir(original)
     assert answers is not None
     assert answers.scope_name == "main"
-    assert answers.source_dir == "/app/source"
+    assert answers.source_dir == str(source_dir)
     assert answers.target_dir == "/opt/target"
     assert answers.servers == "web1,web2"
+    assert answers.rsync_opts == "-az"
     assert answers.fail_fast is True
     assert answers.backup is True
     assert answers.backup_suffix == ".bkp"
@@ -177,34 +199,42 @@ def test_interview_all_defaults():
     assert answers.log_hosts == ""
 
 
-def test_interview_custom_values():
+def test_interview_custom_values(tmp_path):
+    source_dir = tmp_path / "deploy-src"
+    source_dir.mkdir()
     inp = _make_input([
-        "myproject",     # project name
-        "staging",       # scope name
-        "/deploy/src",   # source dir
-        "y",             # continue with placeholder source
-        "/opt/staging",  # target dir
-        "n",             # remote mkdir
-        "app1 app2 app3",  # servers
-        "n",             # fail fast
-        "y",             # backup
-        ".backup",       # backup suffix
-        "2",             # max parallel
-        "y",             # want log hosts
-        "loghost1",      # log hosts
-        "y",             # want log paths
-        "/var/log/jboss",   # jboss
-        "/var/log/apache",  # apache
-        "",              # engin
-        "",              # smartxfr
+        "myproject",             # project name
+        "staging",               # scope name
+        str(source_dir),          # source dir
+        "/opt/staging",          # target dir
+        "n",                     # remote mkdir
+        "app1 app2 app3",        # servers
+        "-az --delete",          # rsync opts
+        "n",                     # fail fast
+        "y",                     # backup
+        ".backup",               # backup suffix
+        "2",                     # max parallel
+        "y",                     # want log hosts
+        "loghost1",              # log hosts
+        "y",                     # want log paths
+        "/var/log/jboss",        # jboss
+        "/var/log/apache",       # apache
+        "",                      # engin
+        "",                      # smartxfr
     ])
     out = io.StringIO()
-    answers = run_guided_interview(inp=inp, out=out)
+    original = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        answers = run_guided_interview(inp=inp, out=out)
+    finally:
+        os.chdir(original)
     assert answers is not None
     assert answers.project == "myproject"
     assert answers.scope_name == "staging"
     assert answers.remote_mkdir is False
     assert answers.servers == "app1,app2,app3"
+    assert answers.rsync_opts == "-az --delete"
     assert answers.fail_fast is False
     assert answers.backup_suffix == ".backup"
     assert answers.max_parallel == 2
@@ -223,6 +253,7 @@ def test_interview_empty_source_retry_then_provide():
         "/opt/target",   # target dir
         "y",             # remote mkdir
         "host1",         # servers
+        "",              # rsync opts
         "y",             # fail fast
         "y",             # backup
         "",              # backup suffix
@@ -252,6 +283,7 @@ def test_interview_empty_target_both_tries_returns_none():
         "",              # project name
         "",              # scope name
         "/src",          # source dir
+        "y",             # keep placeholder source
         "",              # target dir empty
         "",              # target dir retry also empty
     ])
@@ -265,6 +297,7 @@ def test_interview_empty_servers_both_tries_returns_none():
         "",              # project name
         "",              # scope name
         "/src",          # source dir
+        "y",             # keep placeholder source
         "/dst",          # target dir
         "y",             # remote mkdir
         "",              # servers empty
@@ -277,18 +310,19 @@ def test_interview_empty_servers_both_tries_returns_none():
 
 def test_interview_server_dedup():
     inp = _make_input([
-        "",              # project name
-        "",              # scope name
-        "/src",          # source dir
-        "y",             # continue with placeholder source
-        "/dst",          # target dir
-        "y",             # remote mkdir
-        "host1,host2,host1",  # servers with dupe
-        "y",             # fail fast
-        "y",             # backup
-        "",              # suffix
-        "",              # parallel
-        "n",             # log hosts
+        "",                      # project name
+        "",                      # scope name
+        "/definitely/missing/src",  # source dir
+        "y",                        # keep placeholder source
+        "/dst",                  # target dir
+        "y",                     # remote mkdir
+        "host1,host2,host1",     # servers with dupe
+        "",                      # rsync opts
+        "y",                     # fail fast
+        "y",                     # backup
+        "",                      # suffix
+        "",                      # parallel
+        "n",                     # log hosts
     ])
     out = io.StringIO()
     answers = run_guided_interview(inp=inp, out=out)
@@ -301,20 +335,22 @@ def test_interview_server_dedup():
 # ---------------------------------------------------------------------------
 
 def test_run_guided_writes_config(tmp_path):
+    source_dir = tmp_path / "app-src"
+    source_dir.mkdir()
     inp = _make_input([
-        "testproj",      # project
-        "main",          # scope
-        "/app/src",      # source
-        "y",             # continue with placeholder source
-        "/opt/dst",      # target
-        "y",             # remote mkdir
-        "web1,web2",     # servers
-        "y",             # fail fast
-        "y",             # backup
-        "",              # suffix
-        "",              # parallel
-        "n",             # log hosts
-        "write",         # confirm write
+        "testproj",              # project
+        "main",                  # scope
+        str(source_dir),          # source
+        "/opt/dst",              # target
+        "y",                     # remote mkdir
+        "web1,web2",             # servers
+        "-az --delete",          # rsync opts
+        "y",                     # fail fast
+        "y",                     # backup
+        "",                      # suffix
+        "",                      # parallel
+        "n",                     # log hosts
+        "write",                 # confirm write
     ])
     out = io.StringIO()
     original = os.getcwd()
@@ -325,14 +361,17 @@ def test_run_guided_writes_config(tmp_path):
         os.chdir(original)
 
     assert rc == 0
-    config_path = tmp_path / ".seraf" / "config.ini"
-    assert config_path.exists()
+    config_ini_path = tmp_path / ".seraf" / "config.ini"
+    config_yaml_path = tmp_path / ".seraf" / "config.yaml"
+    assert config_ini_path.exists()
+    assert config_yaml_path.exists()
 
     cp = ConfigParser()
-    cp.read(str(config_path))
+    cp.read(str(config_ini_path))
     assert cp["seraf"]["project"] == "testproj"
     assert 'scope "main"' in cp
     assert cp['scope "main"']["servers"] == "web1,web2"
+    assert cp['scope "main"']["rsync_opts"] == "-az --delete"
 
     # State file written
     state_file = tmp_path / ".seraf" / "state" / "main.json"
@@ -352,10 +391,11 @@ def test_run_guided_cancel(tmp_path):
         "",              # project
         "",              # scope
         "/src",          # source
-        "y",             # continue with placeholder source
+        "y",             # keep placeholder source
         "/dst",          # target
         "y",             # remote mkdir
         "host1",         # servers
+        "",              # rsync opts
         "y",             # fail fast
         "y",             # backup
         "",              # suffix
@@ -373,6 +413,7 @@ def test_run_guided_cancel(tmp_path):
 
     assert rc == 1
     assert not (tmp_path / ".seraf" / "config.ini").exists()
+    assert not (tmp_path / ".seraf" / "config.yaml").exists()
     assert "Cancelled" in out.getvalue()
 
 
@@ -391,22 +432,39 @@ def test_run_guided_existing_config_without_force(tmp_path):
     assert "already exists" in out.getvalue()
 
 
+def test_run_guided_existing_yaml_without_force(tmp_path):
+    (tmp_path / ".seraf").mkdir()
+    (tmp_path / ".seraf" / "config.yaml").write_text("seraf: {}\n")
+    out = io.StringIO()
+    inp = io.StringIO("")
+    original = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        rc = run_guided(force=False, inp=inp, out=out)
+    finally:
+        os.chdir(original)
+    assert rc == 1
+    assert "already exists" in out.getvalue()
+
+
 def test_run_guided_existing_config_with_force(tmp_path):
     (tmp_path / ".seraf").mkdir()
     (tmp_path / ".seraf" / "config.ini").write_text("[seraf]\n")
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
     inp = _make_input([
-        "forced",        # project
-        "prod",          # scope
-        "/src",          # source
-        "y",             # continue with placeholder source
-        "/dst",          # target
-        "y",             # remote mkdir
-        "host1",         # servers
-        "y",             # fail fast
-        "n",             # no backup
-        "",              # parallel
-        "n",             # log hosts
-        "write",         # confirm
+        "forced",                # project
+        "prod",                  # scope
+        str(source_dir),          # source
+        "/dst",                  # target
+        "y",                     # remote mkdir
+        "host1",                 # servers
+        "",                      # rsync opts
+        "y",                     # fail fast
+        "n",                     # no backup
+        "",                      # parallel
+        "n",                     # log hosts
+        "write",                 # confirm
     ])
     out = io.StringIO()
     original = os.getcwd()
@@ -422,21 +480,22 @@ def test_run_guided_existing_config_with_force(tmp_path):
 
 
 def test_run_guided_config_parseable_by_seraf_config_loader(tmp_path):
-    """Config generated by guided flow must be loadable by seraf's config.py."""
+    source_dir = tmp_path / "app-src"
+    source_dir.mkdir()
     inp = _make_input([
-        "integtest",     # project
-        "main",          # scope
-        "/app/src",      # source
-        "y",             # continue with placeholder source
-        "/opt/dst",      # target
-        "y",             # remote mkdir
-        "svr1,svr2",     # servers
-        "y",             # fail fast
-        "y",             # backup
-        "",              # suffix
-        "1",             # parallel
-        "n",             # log hosts
-        "write",         # confirm
+        "integtest",             # project
+        "main",                  # scope
+        str(source_dir),          # source
+        "/opt/dst",              # target
+        "y",                     # remote mkdir
+        "svr1,svr2",             # servers
+        "",                      # rsync opts
+        "y",                     # fail fast
+        "y",                     # backup
+        "",                      # suffix
+        "1",                     # parallel
+        "n",                     # log hosts
+        "write",                 # confirm
     ])
     out = io.StringIO()
     original = os.getcwd()
@@ -447,13 +506,46 @@ def test_run_guided_config_parseable_by_seraf_config_loader(tmp_path):
         os.chdir(original)
     assert rc == 0
 
-    # Load using seraf's own config loader
     from seraf.config import load_config
+
     cfg = load_config(tmp_path / ".seraf" / "config.ini")
     assert cfg.project == "integtest"
     assert len(cfg.scopes) == 1
     assert cfg.scopes[0].name == "main"
-    assert str(cfg.scopes[0].source_dir) == "/app/src"
+    assert str(cfg.scopes[0].source_dir) == str(source_dir)
+    assert cfg.scopes[0].servers == ["svr1", "svr2"]
+
+
+def test_yaml_config_parseable_by_seraf_config_loader(tmp_path):
+    source_dir = tmp_path / "app-src"
+    source_dir.mkdir()
+    inp = _make_input([
+        "yamltest",              # project
+        "main",                  # scope
+        str(source_dir),          # source
+        "/opt/dst",              # target
+        "y",                     # remote mkdir
+        "svr1,svr2",             # servers
+        "",                      # rsync opts
+        "y",                     # fail fast
+        "y",                     # backup
+        "",                      # suffix
+        "1",                     # parallel
+        "n",                     # log hosts
+        "write",                 # confirm
+    ])
+    out = io.StringIO()
+    original = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        rc = run_guided(force=False, inp=inp, out=out)
+        assert rc == 0
+        os.remove(tmp_path / ".seraf" / "config.ini")
+        from seraf.config import load_config
+        cfg = load_config(tmp_path / ".seraf" / "config.ini")
+    finally:
+        os.chdir(original)
+    assert cfg.project == "yamltest"
     assert cfg.scopes[0].servers == ["svr1", "svr2"]
 
 
@@ -462,7 +554,6 @@ def test_run_guided_config_parseable_by_seraf_config_loader(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_cli_guided_flag():
-    """Ensure --guided is accepted by the argument parser."""
     from seraf.cli import build_parser
     parser = build_parser()
     args = parser.parse_args(["init", "--guided"])
@@ -471,7 +562,6 @@ def test_cli_guided_flag():
 
 
 def test_cli_init_without_guided():
-    """Ensure --guided defaults to False."""
     from seraf.cli import build_parser
     parser = build_parser()
     args = parser.parse_args(["init"])
@@ -479,15 +569,15 @@ def test_cli_init_without_guided():
 
 
 def test_preview_shown_before_write():
-    """Verify the preview output contains config sections."""
     inp = _make_input([
         "prev",          # project
         "main",          # scope
         "/src",          # source
-        "y",             # continue with placeholder source
+        "y",             # keep placeholder source
         "/dst",          # target
         "y",             # remote mkdir
         "host1",         # servers
+        "",              # rsync opts
         "y",             # fail fast
         "y",             # backup
         "",              # suffix
@@ -499,9 +589,9 @@ def test_preview_shown_before_write():
     assert answers is not None
     config_text = generate_config(answers)
     preview_out = io.StringIO()
-    from seraf.commands.guided import preview_config
     preview_config(config_text, out=preview_out)
     preview = preview_out.getvalue()
     assert "[seraf]" in preview
     assert '[scope "main"]' in preview
     assert "Config preview" in preview
+    assert "YAML mirror" in preview
