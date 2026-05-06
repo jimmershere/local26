@@ -1,0 +1,13 @@
+seraf:
+  profile: prod
+
+defaults:
+  rsync_opts: -aP --delete
+
+scopes:
+  main:
+    target_dir: /srv/myapp
+    servers: [prod-app01, prod-app02]
+
+notifications:
+  notify_on_success: true

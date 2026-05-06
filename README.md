@@ -46,6 +46,10 @@ Start here if another tech needs to pick it up quickly:
 - `docs/commands.md`
 - `docs/troubleshooting.md`
 - `docs/guided-setup.md`
+- `docs/when-to-use-seraf.md`
+- `examples/legacy-settings.cfg.example`
+- `examples/profile-prod.yaml`
+- `CONTRIBUTING.md`
 
 ## RPM packaging
 
