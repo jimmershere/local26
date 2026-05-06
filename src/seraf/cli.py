@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .commands.deploy import run_deploy
+from .commands.diag import run_diag
 from .commands.diff import run_diff
 from .commands.doctor import run_doctor
 from .commands.guided import run_guided
@@ -12,6 +13,8 @@ from .commands.init import run_init
 from .commands.logs import run_logs
 from .commands.plan import run_plan
 from .commands.profiles import run_profile_create, run_profiles
+from .commands.pull import run_pull
+from .commands.pull_logs import run_pull_logs
 from .commands.status import run_status
 
 
@@ -46,7 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--summary", action="store_true")
 
     deploy = sub.add_parser("deploy")
-    deploy.add_argument("--plan", required=True)
+    deploy_target = deploy.add_mutually_exclusive_group(required=True)
+    deploy_target.add_argument("--plan", default=None)
+    deploy_target.add_argument("--latest", action="store_true")
     deploy.add_argument("--scope", default=None)
     deploy.add_argument("--max-parallel", type=int, default=1)
     deploy.add_argument("--rollback-on-failure", action="store_true")
@@ -61,8 +66,35 @@ def build_parser() -> argparse.ArgumentParser:
     deploy.add_argument("--notify", action="store_true")
     deploy.add_argument("--quiet", action="store_true")
 
+    pull = sub.add_parser("pull")
+    pull.add_argument("--scope", default=None)
+    pull.add_argument("--hosts", default=None)
+    pull.add_argument("--rsync-opts", default=None)
+    pull.add_argument("--dry-run", action="store_true")
+
     history = sub.add_parser("history")
     history.add_argument("--limit", type=int, default=20)
+
+    pull_logs = sub.add_parser("pull-logs")
+    pull_logs.add_argument("--settings", default="./settings.cfg")
+    pull_logs.add_argument("--hosts", default=None)
+    pull_logs.add_argument("--dest", default=None)
+    pull_logs.add_argument("--jboss-path", default=None)
+    pull_logs.add_argument("--apache-path", default=None)
+    pull_logs.add_argument("--engin-path", default=None)
+    pull_logs.add_argument("--smartxfr-path", default=None)
+
+    diag = sub.add_parser("diag")
+    diag.add_argument("--project", default=None)
+    diag.add_argument("--hosts", default=None)
+    diag.add_argument("--diag-type", default="strace")
+    diag.add_argument("--pid", default=None)
+    diag.add_argument("--duration", default="20s")
+    diag.add_argument("--remote-cmd", default=None)
+    diag.add_argument("--out-dir", default=None)
+    diag.add_argument("--ssh-user", default=None)
+    diag.add_argument("--include-disabled", action="store_true")
+    diag.add_argument("--dry-run", action="store_true")
 
     logs = sub.add_parser("logs")
     logs.add_argument("run_id")
@@ -95,13 +127,24 @@ def main() -> int:
     if args.command == "plan":
         return run_plan(only_scope=args.scope, output_format=args.format, print_stdout=args.stdout, ci_mode=args.ci, summary=args.summary)
     if args.command == "deploy":
-        return run_deploy(plan=args.plan, scope=args.scope, max_parallel=args.max_parallel,
+        return run_deploy(plan=args.plan, use_latest=args.latest, scope=args.scope, max_parallel=args.max_parallel,
                           rollback_on_failure=args.rollback_on_failure, step_timeout=args.step_timeout,
                           fail_fast=args.fail_fast, dry_run=args.dry_run, check=args.check,
                           hosts_file=args.hosts_file, parallel=args.parallel, profile=args.profile,
                           notify=args.notify, quiet=args.quiet)
+    if args.command == "pull":
+        return run_pull(scope=args.scope, hosts=args.hosts, rsync_opts=args.rsync_opts, dry_run=args.dry_run, profile=args.profile)
     if args.command == "history":
         return run_history(limit=args.limit)
+    if args.command == "pull-logs":
+        return run_pull_logs(settings=args.settings, hosts=args.hosts, dest=args.dest,
+                             jboss_path=args.jboss_path, apache_path=args.apache_path,
+                             engin_path=args.engin_path, smartxfr_path=args.smartxfr_path)
+    if args.command == "diag":
+        return run_diag(project=args.project, hosts=args.hosts, diag_type=args.diag_type,
+                        pid=args.pid, duration=args.duration, remote_cmd=args.remote_cmd,
+                        out_dir=args.out_dir, ssh_user=args.ssh_user,
+                        include_disabled=args.include_disabled, dry_run=args.dry_run)
     if args.command == "logs":
         return run_logs(args.run_id)
     if args.command == "diff":

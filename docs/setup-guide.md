@@ -21,7 +21,8 @@ Make sure these tools are available on the machine running Seraf:
 
 ## Project layout
 Seraf stores project-local files under `.seraf/`:
-- `config.ini` for configuration
+- `config.ini` for the current runtime configuration
+- `config.yaml` as a human-friendly mirror of the guided setup output
 - `state/` for per-scope state
 - `plans/` for generated plans
 - `runs/` for deploy records
@@ -37,7 +38,7 @@ cd /path/to/project
 ```bash
 seraf init --guided
 ```
-The guided flow is the easiest front door. It asks one decision at a time and shows a config preview before writing anything.
+The guided flow is the easiest front door. It asks one decision at a time, covers hosts / rsync / backups, and shows a config preview before writing anything.
 
 ### Step 3: read the preview carefully
 Double-check:
@@ -82,7 +83,7 @@ If you already have an older settings file:
 ```bash
 seraf init --import ./settings.cfg
 ```
-Seraf converts it into `.seraf/config.ini` and creates the expected local directories.
+Seraf converts it into `.seraf/config.ini` and creates the expected local directories. Guided setup also writes `.seraf/config.yaml` for easier human review.
 
 ## Operator guidance
 For early rollouts:
@@ -91,6 +92,13 @@ For early rollouts:
 - keep backups enabled
 - use dry runs generously
 - review the run record in `.seraf/runs/`
+
+## After the first deploy path works
+The next operator commands to learn are:
+- `seraf history --limit 5`
+- `seraf logs <run-id>`
+- `seraf pull --scope main --dry-run`
+- `seraf diag --hosts app01 --dry-run`
 
 ## When something feels wrong
 Do not guess. Use:

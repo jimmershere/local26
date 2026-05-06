@@ -172,29 +172,13 @@ def _build_scope(scope, cfg, only_scope: str | None = None) -> dict | None:
 
 
 def _render_summary(plan: dict, plan_path: Path) -> str:
-    lines = [
-        'Seraf plan summary',
-        '==================',
-        f"Plan ID: {plan['plan_id']}",
-        f"Saved to: {plan_path}",
-        '',
-    ]
-    if not plan['scopes']:
-        lines.append('No scopes matched the request.')
-        return '\n'.join(lines)
-    total_steps = 0
+    del plan_path
+    lines: list[str] = []
     for scope in plan['scopes']:
-        counts = scope['summary']['counts']
-        total_steps += len(scope['steps'])
-        lines.extend([
-            f"Scope: {scope['scope']}",
-            f"  Servers: {', '.join(scope['inputs']['servers']) or '(none)'}",
-            f"  Files selected: {scope['discovery']['files_selected']} of {scope['discovery']['files_found']}",
-            f"  Steps: {len(scope['steps'])} total, {counts['mkdir_steps']} mkdir, {counts['rsync_steps']} rsync",
-            f"  Backup-enabled steps: {counts['rollbackable_steps']}",
-            '',
-        ])
-    lines.append(f'Total steps across plan: {total_steps}')
+        for step in scope.get('steps', []):
+            timeout = step.get('timeout')
+            timeout_text = '-' if timeout is None else str(timeout)
+            lines.append(f"{step.get('id', '?')} | {step.get('type', 'step')} | {timeout_text} | pending")
     return '\n'.join(lines)
 
 

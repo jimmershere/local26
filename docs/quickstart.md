@@ -19,7 +19,7 @@ Answer the prompts for:
 - servers
 - safety defaults
 
-Seraf writes `.seraf/config.ini` and creates the local state folders for you.
+Seraf writes `.seraf/config.ini`, mirrors it to `.seraf/config.yaml`, and creates the local state folders for you.
 
 ## 3. Check the environment
 ```bash
@@ -46,6 +46,16 @@ seraf deploy --plan .seraf/plans/<plan-id>.plan.json --scope main --fail-fast
 ## 6. Check status
 ```bash
 seraf status
+```
+
+## 7. Useful follow-up commands
+Once the first plan/deploy path makes sense, these are the next commands worth learning:
+
+```bash
+seraf history --limit 5
+seraf logs <run-id>
+seraf pull --scope main --dry-run
+seraf diag --hosts app01 --dry-run
 ```
 
 ## Good first habits

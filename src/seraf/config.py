@@ -10,6 +10,9 @@ import yaml
 from .models import ScopeConfig
 from .profiles import load_profile_data, merge_profile
 
+DEFAULT_CONFIG_PATH = Path(".seraf/config.ini")
+ALT_CONFIG_PATHS = (Path(".seraf/config.yaml"), Path(".seraf/config.yml"))
+
 
 @dataclass(slots=True)
 class SerafConfig:
@@ -24,6 +27,21 @@ class SerafConfig:
     routing_env_from_server_name_char_map: str = "s:sys,q:qa,p:production"
     profile: str | None = None
     notifications: dict[str, Any] = field(default_factory=dict)
+
+
+def resolve_config_path(path: str | Path = DEFAULT_CONFIG_PATH) -> Path:
+    candidate = Path(path)
+    if candidate.is_file():
+        return candidate
+    sibling_yaml = (candidate.with_suffix(".yaml"), candidate.with_suffix(".yml"))
+    for alt in sibling_yaml:
+        if alt.is_file():
+            return alt
+    if candidate == DEFAULT_CONFIG_PATH:
+        for alt in ALT_CONFIG_PATHS:
+            if alt.is_file():
+                return alt
+    raise FileNotFoundError(candidate)
 
 
 def _get_bool(parser: configparser.ConfigParser, section: str, option: str, fallback: bool) -> bool:
@@ -96,6 +114,34 @@ def _base_dict_from_ini(path: Path) -> dict[str, Any]:
     }
 
 
+def _base_dict_from_yaml(path: Path) -> dict[str, Any]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"expected mapping at top level in {path}")
+    defaults = data.get("defaults") or {}
+    routing = data.get("routing") or {}
+    notifications = data.get("notifications") or {}
+    scopes = data.get("scopes") or {}
+    return {
+        "seraf": {
+            "project": (data.get("seraf") or {}).get("project", path.parent.parent.name),
+        },
+        "defaults": {
+            "rsync_opts": defaults.get("rsync_opts", "-az"),
+            "backup": bool(defaults.get("backup", True)),
+            "backup_suffix": defaults.get("backup_suffix", ".bkp"),
+            "remote_mkdir": bool(defaults.get("remote_mkdir", True)),
+        },
+        "routing": {
+            "env_from_filename_prefix": routing.get("env_from_filename_prefix", "s:sys,q:qa,p:production"),
+            "env_from_server_name_char_at": int(routing.get("env_from_server_name_char_at", 4)),
+            "env_from_server_name_char_map": routing.get("env_from_server_name_char_map", "s:sys,q:qa,p:production"),
+        },
+        "notifications": notifications,
+        "scopes": scopes,
+    }
+
+
 def _build_scope_configs(data: dict[str, Any], defaults: dict[str, Any]) -> list[ScopeConfig]:
     scopes: list[ScopeConfig] = []
     for name, values in (data.get("scopes") or {}).items():
@@ -119,11 +165,12 @@ def _build_scope_configs(data: dict[str, Any], defaults: dict[str, Any]) -> list
     return scopes
 
 
-def load_config(path: str | Path = ".seraf/config.ini", *, profile: str | None = None) -> SerafConfig:
-    path = Path(path)
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    base = _base_dict_from_ini(path)
+def load_config(path: str | Path = DEFAULT_CONFIG_PATH, *, profile: str | None = None) -> SerafConfig:
+    path = resolve_config_path(path)
+    if path.suffix in {".yaml", ".yml"}:
+        base = _base_dict_from_yaml(path)
+    else:
+        base = _base_dict_from_ini(path)
     if profile:
         base = merge_profile(base, load_profile_data(profile, root=path.parent.parent))
     defaults = base["defaults"]

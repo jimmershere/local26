@@ -3,26 +3,41 @@
 ## Overview
 
 ```
-seraf init [--import PATH] [--force] [--project NAME]
-seraf plan [--scope NAME] [--format json] [--stdout] [--ci] [--summary]
-seraf deploy --plan PATH [options]
-seraf deploy --latest [options]
-seraf status
+seraf init [--import PATH] [--force] [--project NAME] [--guided]
 seraf doctor [--plan PATH]
-seraf help
+seraf status
+seraf hooks
+seraf profiles
+seraf profile create NAME
+seraf plan [--scope NAME] [--format json] [--stdout] [--ci] [--summary]
+seraf deploy (--plan PATH | --latest) [options]
+seraf pull [--scope NAME] [--hosts host1,host2] [--rsync-opts OPTS] [--dry-run]
+seraf history [--limit N]
+seraf pull-logs [options]
+seraf diag [options]
+seraf logs RUN_ID
+seraf diff PLAN_A PLAN_B
 ```
+
+Global option:
+
+```
+seraf --profile PROFILE <command>
+```
+Use `--profile` to apply a profile overlay from `.seraf/profiles/` when the command supports it.
 
 ---
 
 ## `seraf init`
 
-Initializes the `.seraf/` workspace directory structure and generates `config.ini` by importing a legacy `settings.cfg` or a modern config.
+Initializes the `.seraf/` workspace directory structure and generates `config.ini` by importing a legacy `settings.cfg` or a modern config. Guided mode also writes a matching `config.yaml` mirror.
 
 | Flag | Description |
 |---|---|
 | `--import PATH` | Path to legacy or modern config to import |
 | `--force` | Overwrite existing `.seraf/config.ini` |
 | `--project NAME` | Override project name in generated config |
+| `--guided` | Launch the interactive guided setup flow instead of importing config |
 
 ---
 
@@ -72,10 +87,22 @@ Executes a deployment plan.
 | `--latest` | Use the most recently generated plan file |
 | `--dry-run` | Print steps without executing |
 | `--scope NAME` | Execute only steps for the named scope |
-| `--max-parallel N` | Max concurrent background workers (default: 4) |
-| `--step-timeout SECS` | Default timeout per step in seconds (0 = none) |
+| `--max-parallel N` | Max concurrent workers (CLI default: 1) |
+| `--step-timeout SECS` | Default timeout per step in seconds |
 | `--rollback-on-failure` | On failure, execute rollback cmds for successful prior steps |
-| `--fail-fast` / `--no-fail-fast` | Override `fail_fast` from config |
+| `--fail-fast` / `--no-fail-fast` | Override `fail_fast` behavior |
+| `--check` | Validate the plan and execution inputs before running steps |
+| `--hosts-file PATH` | Restrict execution to hosts listed in a file |
+| `--parallel` | Enable parallel host execution where supported |
+| `--notify` | Emit notification output for wrapped/operator workflows |
+| `--quiet` | Reduce normal progress chatter |
+
+### Recommended first live deploy
+
+```bash
+seraf deploy --plan .seraf/plans/<plan-id>.plan.json --scope main --dry-run --fail-fast
+seraf deploy --plan .seraf/plans/<plan-id>.plan.json --scope main --fail-fast
+```
 
 ---
 
@@ -117,6 +144,104 @@ Last run:
   exit_code : 0
   timestamp : 2026-01-01T00:01:00Z
 ```
+
+---
+
+## `seraf pull`
+
+Pulls files back from remote hosts using the current project config.
+
+| Flag | Description |
+|---|---|
+| `--scope NAME` | Restrict pull to a named scope |
+| `--hosts host1,host2` | Restrict to specific hosts |
+| `--rsync-opts OPTS` | Extra rsync options to append |
+| `--dry-run` | Print the pull actions without executing |
+
+Use this when you need reverse sync from a remote system back into the local workspace.
+
+---
+
+## `seraf history`
+
+Shows recent deployment runs, newest first.
+
+| Flag | Description |
+|---|---|
+| `--limit N` | Maximum number of runs to show (default: 20) |
+
+---
+
+## `seraf pull-logs`
+
+Collects remote application logs into a local destination folder.
+
+| Flag | Description |
+|---|---|
+| `--settings PATH` | Legacy settings file to read (default: `./settings.cfg`) |
+| `--hosts host1,host2` | Restrict to specific hosts |
+| `--dest PATH` | Local destination directory |
+| `--jboss-path PATH` | Override JBoss log path |
+| `--apache-path PATH` | Override Apache log path |
+| `--engin-path PATH` | Override Engin log path |
+| `--smartxfr-path PATH` | Override SmartXfr log path |
+
+---
+
+## `seraf diag`
+
+Runs remote diagnostics against one or more hosts.
+
+| Flag | Description |
+|---|---|
+| `--project NAME` | Project label for the diagnostic bundle |
+| `--hosts host1,host2` | Restrict to specific hosts |
+| `--diag-type TYPE` | Diagnostic type, for example `strace` |
+| `--pid PID` | Process ID for targeted diagnostics |
+| `--duration VALUE` | Capture duration, for example `20s` |
+| `--remote-cmd CMD` | Custom remote command override |
+| `--out-dir PATH` | Local output directory |
+| `--ssh-user USER` | Override SSH user |
+| `--include-disabled` | Include hosts marked disabled in config |
+| `--dry-run` | Print the diagnostic actions without executing |
+
+---
+
+## `seraf logs`
+
+Shows detailed step-by-step output for a single run. `RUN_ID` may be a full run ID or an unambiguous prefix.
+
+---
+
+## `seraf diff`
+
+Compares two generated plan files.
+
+Usage:
+
+```bash
+seraf diff .seraf/plans/old.plan.json .seraf/plans/new.plan.json
+```
+
+Use this when you want a quick before/after check on plan generation changes.
+
+---
+
+## `seraf hooks`
+
+Lists supported hook paths and whether each hook is installed and executable.
+
+---
+
+## `seraf profiles`
+
+Lists available profile overlays from `.seraf/profiles/`.
+
+---
+
+## `seraf profile create`
+
+Creates a scaffold profile file at `.seraf/profiles/<name>.yaml`.
 
 ---
 

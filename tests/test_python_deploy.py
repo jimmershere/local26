@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from seraf.commands.deploy import parse_hosts_file, run_check, run_deploy
+from seraf.commands.deploy import _resolve_plan_path, parse_hosts_file, run_check, run_deploy
 
 
 def _write_plan(path: Path, *, cmd: str = 'printf ok', rollback: bool = False,
@@ -56,6 +56,17 @@ def _write_hosts_file(path: Path, hosts: list[tuple[str, str, str]]) -> None:
 # Existing tests (preserved)
 # ---------------------------------------------------------------------------
 
+def test_resolve_latest_plan_path(tmp_path: Path) -> None:
+    plans_dir = tmp_path / ".seraf" / "plans"
+    plans_dir.mkdir(parents=True)
+    older = plans_dir / "20260430T010101Z-aaaa1111.plan.json"
+    newer = plans_dir / "20260501T020202Z-bbbb2222.plan.json"
+    older.write_text("{}", encoding="utf-8")
+    newer.write_text("{}", encoding="utf-8")
+
+    assert _resolve_plan_path(use_latest=True, plans_dir=str(plans_dir)) == newer
+
+
 def test_run_deploy_dry_run_writes_run_and_state(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
     plan_path = tmp_path / "plan.json"
@@ -71,6 +82,7 @@ def test_run_deploy_dry_run_writes_run_and_state(tmp_path: Path, monkeypatch, ca
     run = json.loads(run_files[0].read_text(encoding="utf-8"))
     assert run["dry_run"] is True
     assert run["steps"][0]["stdout"] == ""
+    assert (run_files[0].parent / "run.log").exists()
     state = json.loads((tmp_path / ".seraf" / "state" / "web.json").read_text(encoding="utf-8"))
     assert state["last_plan_id"] == "p1"
     assert state["files_last_deployed_count"] == 1
@@ -90,6 +102,7 @@ def test_run_deploy_failure_records_stderr(tmp_path: Path, monkeypatch, capsys) 
     run = json.loads(run_files[0].read_text(encoding="utf-8"))
     assert run["rc"] == 7
     assert run["steps"][0]["stderr"] == "broken"
+    assert not (tmp_path / ".seraf" / "state" / "web.json").exists()
 
 
 def test_run_deploy_missing_scope_is_friendly(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -120,6 +133,20 @@ def test_check_valid_plan(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "Check passed" in out
     assert "Scopes: 1" in out
     assert "Total steps: 1" in out
+
+
+def test_check_latest_plan(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    plans_dir = tmp_path / ".seraf" / "plans"
+    plans_dir.mkdir(parents=True)
+    plan_path = plans_dir / "20260501T020202Z-p1.plan.json"
+    _write_plan(plan_path)
+
+    rc = run_check(use_latest=True)
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert ".seraf/plans/20260501T020202Z-p1.plan.json" in out
 
 
 def test_check_missing_plan(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -221,6 +248,22 @@ def test_deploy_dry_run_creates_run_record(tmp_path: Path, monkeypatch, capsys) 
     assert data["rc"] == 0
 
 
+def test_deploy_latest_plan_file(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    plans_dir = tmp_path / ".seraf" / "plans"
+    plans_dir.mkdir(parents=True)
+    older = plans_dir / "20260430T010101Z-old.plan.json"
+    newer = plans_dir / "20260501T020202Z-new.plan.json"
+    _write_plan(older, scope_name="old")
+    _write_plan(newer, scope_name="web")
+
+    rc = run_deploy(use_latest=True, dry_run=True)
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert ".seraf/plans/20260501T020202Z-new.plan.json" in out
+
+
 def test_deploy_missing_plan_file(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
     rc = run_deploy(plan=str(tmp_path / "missing.json"))
@@ -284,6 +327,41 @@ def test_deploy_multi_host_parallel(tmp_path: Path, monkeypatch, capsys) -> None
     assert "Per-host results:" in out
 
 
+def test_deploy_remote_cmd_uses_ssh_target(tmp_path: Path, monkeypatch, capsys) -> None:
+    import seraf.commands.deploy as deploy_module
+
+    monkeypatch.chdir(tmp_path)
+    plan_path = tmp_path / "plan.json"
+    payload = {
+        "schema": "seraf.plan.v0.1",
+        "kind": "plan",
+        "mode": "deploy",
+        "plan_id": "remote1",
+        "scopes": [{"scope": "web", "steps": [
+            {"id": "scope:web:0001", "type": "remote_cmd", "server": "web1", "cmd": "systemctl status app"}
+        ]}],
+    }
+    plan_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    captured: list[tuple[str, str]] = []
+
+    def fake_run_remote(host: str, command: str, timeout_seconds=None, *, dry_run: bool = False):
+        captured.append((host, command))
+        return 0, "ok", "", False
+
+    monkeypatch.setattr(deploy_module, "_run_remote", fake_run_remote)
+
+    rc = run_deploy(plan=str(plan_path), dry_run=False)
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "on web1" in out
+    assert captured == [("web1", "systemctl status app")]
+    run_files = list((tmp_path / ".seraf" / "runs").glob("*/run.json"))
+    run = json.loads(run_files[0].read_text(encoding="utf-8"))
+    assert run["steps"][0]["host"] == "web1"
+
+
 def test_deploy_multi_host_fail_fast(tmp_path: Path, monkeypatch, capsys) -> None:
     """With fail-fast, a failing host should prevent subsequent hosts in sequential mode."""
     monkeypatch.chdir(tmp_path)
@@ -330,6 +408,14 @@ def test_deploy_per_host_status_output(tmp_path: Path, monkeypatch, capsys) -> N
 # ---------------------------------------------------------------------------
 # CLI parser tests
 # ---------------------------------------------------------------------------
+
+def test_cli_deploy_latest_flag() -> None:
+    from seraf.cli import build_parser
+    parser = build_parser()
+    args = parser.parse_args(["deploy", "--latest"])
+    assert args.latest is True
+    assert args.plan is None
+
 
 def test_cli_deploy_check_flag() -> None:
     from seraf.cli import build_parser

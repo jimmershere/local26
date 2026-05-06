@@ -2,6 +2,8 @@
 
 Seraf is a Python-based deployment and runbook control plane for file sync, plan generation, deploy execution, diagnostics, and operator workflows.
 
+Feedback, issues, and borrowed workflow ideas are welcome — especially if they help make Seraf simpler, tougher, and easier for another operator to trust.
+
 ## Quick start
 
 ```bash
@@ -17,10 +19,16 @@ seraf --help
 ```bash
 seraf init --guided
 seraf doctor
-seraf plan --stdout
-seraf deploy --plan .seraf/plans/<plan>.plan.json --check
+seraf plan --summary
+seraf deploy --plan .seraf/plans/<plan>.plan.json --check --dry-run
+seraf history --limit 5
+seraf logs <run-id>
+seraf pull --scope main --dry-run
+seraf diag --hosts app01 --dry-run
 seraf status
 ```
+
+Guided setup writes both `.seraf/config.ini` for the current runtime and `.seraf/config.yaml` as a human-readable mirror.
 
 ## Repo layout
 
@@ -28,6 +36,16 @@ seraf status
 - `bin/seraf`, shell compatibility wrapper
 - `docs/`, operator docs
 - `packaging/rpm/`, first RPM packaging scaffold
+
+## Operator docs
+
+Start here if another tech needs to pick it up quickly:
+
+- `docs/quickstart.md`
+- `docs/setup-guide.md`
+- `docs/commands.md`
+- `docs/troubleshooting.md`
+- `docs/guided-setup.md`
 
 ## RPM packaging
 

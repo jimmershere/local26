@@ -26,6 +26,15 @@ def _load_plan(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _resolve_plan_path(*, plan: str | None = None, use_latest: bool = False, plans_dir: str = ".seraf/plans") -> Path | None:
+    if use_latest:
+        candidates = sorted(Path(plans_dir).glob("*.plan.json"))
+        return candidates[-1] if candidates else None
+    if plan:
+        return Path(plan)
+    return None
+
+
 def _run_shell(command: str, timeout_seconds: int | None = None, *, dry_run: bool = False) -> tuple[int, str, str, bool]:
     if dry_run:
         return 0, "", "", False
@@ -36,6 +45,22 @@ def _run_shell(command: str, timeout_seconds: int | None = None, *, dry_run: boo
         stdout = (exc.stdout or "").strip() if isinstance(exc.stdout, str) else ""
         stderr = (exc.stderr or "").strip() if isinstance(exc.stderr, str) else ""
         return 124, stdout, stderr or "step timed out", True
+
+
+def _run_remote(host: str, command: str, timeout_seconds: int | None = None, *, dry_run: bool = False) -> tuple[int, str, str, bool]:
+    if dry_run:
+        return 0, "", "", False
+    try:
+        proc = subprocess.run(["ssh", host, command], text=True, capture_output=True, timeout=timeout_seconds)
+        return proc.returncode, proc.stdout.strip(), proc.stderr.strip(), False
+    except subprocess.TimeoutExpired as exc:
+        stdout = (exc.stdout or "").strip() if isinstance(exc.stdout, str) else ""
+        stderr = (exc.stderr or "").strip() if isinstance(exc.stderr, str) else ""
+        return 124, stdout, stderr or "step timed out", True
+
+
+def _step_host(step: dict, host_label: str | None = None) -> str | None:
+    return host_label or step.get("host") or step.get("server")
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -79,10 +104,11 @@ def _safe_print(*args, **kwargs) -> None:
         print(*args, **kwargs)
 
 
-def run_check(*, plan: str) -> int:
-    plan_path = Path(plan)
-    if not plan_path.is_file():
-        print(f"Seraf check could not find plan file: {plan_path}")
+def run_check(*, plan: str | None = None, use_latest: bool = False) -> int:
+    plan_path = _resolve_plan_path(plan=plan, use_latest=use_latest)
+    if plan_path is None or not plan_path.is_file():
+        target = plan_path if plan_path is not None else Path(".seraf/plans")
+        print(f"Seraf check could not find plan file: {target}")
         return 1
     try:
         plan_data = _load_plan(plan_path)
@@ -168,31 +194,35 @@ def _deploy_scope_steps(scope_obj: dict, *, dry_run: bool, step_timeout: int | N
     printer(display)
     printer(f"  Steps queued: {len(scope_obj.get('steps', []))}")
     for index, step in enumerate(scope_obj.get("steps", [])):
+        target_host = _step_host(step, host_label)
         step_record: dict = {
             "scope": scope_name,
             "id": step["id"],
             "type": step.get("type"),
-            "host": host_label or step.get("host"),
+            "host": target_host,
             "cmd": step.get("cmd"),
         }
         if failure_seen and fail_fast:
             step_record.update({"rc": -1, "started_at": _now_iso(), "finished_at": _now_iso(), "stdout": "", "stderr": "skipped after earlier failure"})
             steps_out.append(step_record)
             continue
-        printer(f"  -> {step['id']} [{step.get('type', 'step')}] on {host_label or step.get('host', 'n/a')}")
+        printer(f"  -> {step['id']} [{step.get('type', 'step')}] on {target_host or 'n/a'}")
         started = _now_iso()
         started_monotonic = monotonic()
         timeout_seconds = step.get("timeout")
         if timeout_seconds is None:
             timeout_seconds = step_timeout
-        step_rc, stdout, stderr, timed_out = _run_shell(step["cmd"], timeout_seconds=timeout_seconds, dry_run=dry_run)
+        if step.get("type") == "remote_cmd" and target_host:
+            step_rc, stdout, stderr, timed_out = _run_remote(target_host, step["cmd"], timeout_seconds=timeout_seconds, dry_run=dry_run)
+        else:
+            step_rc, stdout, stderr, timed_out = _run_shell(step["cmd"], timeout_seconds=timeout_seconds, dry_run=dry_run)
         finished = _now_iso()
         duration = monotonic() - started_monotonic
         step_record.update({"rc": step_rc, "started_at": started, "finished_at": finished, "stdout": stdout, "stderr": stderr, "duration_seconds": duration})
         steps_out.append(step_record)
         if timed_out and notifications_config is not None and notifications_log is not None:
             _maybe_notify(notifications_log, notifications_config, quiet=quiet, force=True, event=NotificationEvent(
-                host=host_label or step.get("host") or "local",
+                host=target_host or "local",
                 status="warning",
                 duration_seconds=duration,
                 errors=[stderr or "step timed out", f"step={step['id']}", f"scope={scope_name}"],
@@ -225,7 +255,7 @@ def _deploy_scope_steps(scope_obj: dict, *, dry_run: bool, step_timeout: int | N
             _run_shell(global_failure["cmd"], dry_run=dry_run)
         if fail_fast:
             for remaining in scope_obj.get("steps", [])[index + 1:]:
-                steps_out.append({"scope": scope_name, "id": remaining["id"], "type": remaining.get("type"), "host": host_label or remaining.get("host"), "cmd": remaining.get("cmd"), "rc": -1, "started_at": _now_iso(), "finished_at": _now_iso(), "stdout": "", "stderr": "skipped after earlier failure"})
+                steps_out.append({"scope": scope_name, "id": remaining["id"], "type": remaining.get("type"), "host": _step_host(remaining, host_label), "cmd": remaining.get("cmd"), "rc": -1, "started_at": _now_iso(), "finished_at": _now_iso(), "stdout": "", "stderr": "skipped after earlier failure"})
             break
     return steps_out, rc, deployed_files
 
@@ -256,17 +286,18 @@ def _deploy_host_group(host: str, steps: list[dict], *, dry_run: bool,
     return {"host": host, "rc": rc, "deployed_files": deployed_files, "steps": steps_out}
 
 
-def run_deploy(*, plan: str, scope: str | None = None, max_parallel: int = 1,
+def run_deploy(*, plan: str | None = None, use_latest: bool = False, scope: str | None = None, max_parallel: int = 1,
                rollback_on_failure: bool = False, step_timeout: int | None = None,
                fail_fast: bool = False, dry_run: bool = False,
                hosts_file: str | None = None, parallel: bool = False,
                check: bool = False, profile: str | None = None,
                notify: bool = False, quiet: bool = False) -> int:
     if check:
-        return run_check(plan=plan)
-    plan_path = Path(plan)
-    if not plan_path.is_file():
-        print(f"Seraf deploy could not find plan file: {plan_path}")
+        return run_check(plan=plan, use_latest=use_latest)
+    plan_path = _resolve_plan_path(plan=plan, use_latest=use_latest)
+    if plan_path is None or not plan_path.is_file():
+        target = plan_path if plan_path is not None else Path(".seraf/plans")
+        print(f"Seraf deploy could not find plan file: {target}")
         return 1
     plan_data = _load_plan(plan_path)
     scopes = plan_data.get("scopes", [])
@@ -286,7 +317,13 @@ def run_deploy(*, plan: str, scope: str | None = None, max_parallel: int = 1,
             return 1
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-deploy"
     run_dir = Path(".seraf") / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
     run_json = run_dir / "run.json"
+    run_log = run_dir / "run.log"
+    run_log.write_text(
+        f"run_id={run_id}\nplan_id={plan_data.get('plan_id', '')}\ndry_run={'true' if dry_run else 'false'}\n",
+        encoding="utf-8",
+    )
     all_steps: list[dict] = []
     overall_rc = 0
     host_results: list[dict] = []
@@ -357,14 +394,16 @@ def run_deploy(*, plan: str, scope: str | None = None, max_parallel: int = 1,
         for hr in host_results:
             status = "ok" if hr["rc"] == 0 else f"FAILED (rc={hr['rc']})"
             print(f"  {hr['host']}: {status} ({hr['deployed_files']} files)")
-        for scope_obj in scopes:
-            _update_scope_state(scope_obj.get("scope", "unknown"), plan_id=plan_data.get("plan_id"), run_id=run_id, rc=overall_rc, deployed_files=sum(hr["deployed_files"] for hr in host_results))
+        if dry_run or overall_rc == 0:
+            for scope_obj in scopes:
+                _update_scope_state(scope_obj.get("scope", "unknown"), plan_id=plan_data.get("plan_id"), run_id=run_id, rc=overall_rc, deployed_files=sum(hr["deployed_files"] for hr in host_results))
     else:
         for scope_obj in scopes:
             scope_name = scope_obj.get("scope", "unknown")
             steps_out, rc, deployed_files = _deploy_scope_steps(scope_obj, dry_run=dry_run, step_timeout=step_timeout, fail_fast=fail_fast, rollback_on_failure=rollback_on_failure, plan_data=plan_data, notifications_config=notifications_cfg, notifications_log=notification_warnings, quiet=quiet, force_notify=notify, run_id=run_id)
             all_steps.extend(steps_out)
-            _update_scope_state(scope_name, plan_id=plan_data.get("plan_id"), run_id=run_id, rc=rc, deployed_files=deployed_files)
+            if dry_run or rc == 0:
+                _update_scope_state(scope_name, plan_id=plan_data.get("plan_id"), run_id=run_id, rc=rc, deployed_files=deployed_files)
             if rc != 0:
                 overall_rc = rc
             if rc != 0 and fail_fast:
