@@ -8,12 +8,14 @@ from typing import Any
 
 import yaml
 
+from .db.config import validate_database_ini_section, validate_database_yaml_targets
 from .models import ScopeConfig
 from .profiles import load_profile_data, merge_profile
 
 DEFAULT_CONFIG_PATH = Path(".local26/config.ini")
 ALT_CONFIG_PATHS = (Path(".local26/config.yaml"), Path(".local26/config.yml"))
 _SCOPE_SECTION_RE = re.compile(r'^scope "([^"]+)"$')
+_COMPLIANCE_SECTION_RE = re.compile(r'^compliance "([^"]+)"$')
 
 
 @dataclass(slots=True)
@@ -140,6 +142,20 @@ _INI_ALLOWED_KEYS = {
         "input_format",
         "fail_closed",
     },
+    "compliance": {
+        "enabled",
+        "profile",
+        "root",
+        "scope",
+        "fail_on",
+        "report_dir",
+        "controls",
+        "include_passed",
+        "strict_unknown",
+        "include_slow",
+    },
+    "compliance.inventory": {"include_sections", "extra_paths"},
+    "compliance.hardening": {"include_advisory"},
     "notifications": {"notify_on_success"},
     "notification.telegram": {"enabled", "bot_token", "chat_id", "api_base"},
     "notification.email": {"enabled", "to", "sendmail_bin", "subject_prefix"},
@@ -188,6 +204,7 @@ _ROUTING_REQUIRED_KEYS = {
     "env_from_server_name_char_map",
 }
 _SCOPE_REQUIRED_KEYS = {"enabled", "source_dir", "target_dir", "servers", "discovery"}
+_COMPLIANCE_TARGET_ALLOWED_KEYS = {"enabled", "profile", "root", "scope", "fail_on", "controls", "paths", "owner", "environment", "waivers"}
 _BOOLEAN_KEYS = {
     ("local26", "require_plan_for_deploy"),
     ("local26", "fail_fast"),
@@ -209,6 +226,11 @@ _BOOLEAN_KEYS = {
     ("access.service_accounts", "fail_closed"),
     ("access.external", "enabled"),
     ("access.external", "fail_closed"),
+    ("compliance", "enabled"),
+    ("compliance", "include_passed"),
+    ("compliance", "strict_unknown"),
+    ("compliance", "include_slow"),
+    ("compliance.hardening", "include_advisory"),
     ("notifications", "notify_on_success"),
     ("notification.telegram", "enabled"),
     ("notification.email", "enabled"),
@@ -293,6 +315,25 @@ def _validate_ini_config(path: Path) -> list[ConfigValidationFinding]:
                 findings.append(_validation_finding("FAIL", f"[{section}] discovery must be mtime_since_last_success"))
             continue
 
+        compliance_match = _COMPLIANCE_SECTION_RE.match(section)
+        if compliance_match:
+            compliance_name = compliance_match.group(1).strip()
+            if not compliance_name:
+                findings.append(_validation_finding("FAIL", "compliance section name must not be empty"))
+            unknown = sorted(set(parser.options(section)) - _COMPLIANCE_TARGET_ALLOWED_KEYS)
+            for key in unknown:
+                findings.append(_validation_finding("FAIL", f"unknown key [{section}] {key}"))
+            _validate_bool(parser, section, "enabled", findings)
+            continue
+
+        database_errors = validate_database_ini_section(section, set(parser.options(section)))
+        if database_errors:
+            for error in database_errors:
+                findings.append(_validation_finding("FAIL", error))
+            continue
+        if section.startswith('database "'):
+            continue
+
         if section not in _INI_ALLOWED_KEYS:
             findings.append(_validation_finding("FAIL", f"unknown section [{section}]"))
             continue
@@ -327,6 +368,13 @@ def _validate_ini_config(path: Path) -> list[ConfigValidationFinding]:
     _validate_int(parser, "routing", "env_from_server_name_char_at", minimum=1, findings=findings)
     _validate_int(parser, "access.ldap", "cache_ttl_seconds", minimum=0, findings=findings)
     _validate_int(parser, "access.external", "timeout_seconds", minimum=1, findings=findings)
+    if parser.has_section("compliance"):
+        fail_on = parser.get("compliance", "fail_on", fallback="")
+        if fail_on and fail_on not in {"never", "low", "medium", "high", "critical"}:
+            findings.append(_validation_finding("FAIL", "[compliance] fail_on must be never, low, medium, high, or critical"))
+        scope = parser.get("compliance", "scope", fallback="")
+        if scope and scope not in {"all", "access", "linux", "os", "web", "java", "javascript", "node", "angular"}:
+            findings.append(_validation_finding("FAIL", "[compliance] scope must be a supported compliance scanner scope"))
 
     if not scopes:
         findings.append(_validation_finding("WARN", "no [scope \"NAME\"] sections configured"))
@@ -356,7 +404,7 @@ def _validate_yaml_config(path: Path) -> list[ConfigValidationFinding]:
     except OSError as exc:
         return [_validation_finding("FAIL", f"could not read {path}: {exc}")]
     data = _expect_mapping(data, "top-level config", findings)
-    allowed_top = {"local26", "tools", "defaults", "routing", "access", "notifications", "scopes"}
+    allowed_top = {"local26", "tools", "defaults", "routing", "access", "notifications", "scopes", "databases", "compliance"}
     for key in sorted(set(data) - allowed_top):
         findings.append(_validation_finding("FAIL", f"unknown top-level key {key!r}"))
     core = _expect_mapping(data.get("local26"), "local26", findings)
@@ -372,6 +420,8 @@ def _validate_yaml_config(path: Path) -> list[ConfigValidationFinding]:
         findings.append(_validation_finding("FAIL", f"local26.default_scope {default_scope!r} does not match any scope"))
     if not data.get("access"):
         findings.append(_validation_finding("WARN", "no access policy configured"))
+    for error in validate_database_yaml_targets(data):
+        findings.append(_validation_finding("FAIL", error))
     if not [finding for finding in findings if finding.level == "FAIL"]:
         findings.append(ConfigValidationFinding("PASS", "config:schema", f"{path} matches schema"))
     return findings

@@ -56,7 +56,43 @@ local26 history --limit 5
 local26 logs <run-id>
 local26 pull --scope main --dry-run
 local26 diag --hosts app01 --dry-run
+local26 db doctor
+local26 compliance report --scope access --no-include-passed
 ```
+
+
+## Optional: add database targets
+Add database targets to `.local26/config.ini` when you want Local-26 to check database readiness:
+
+```ini
+[database "app-sqlite"]
+engine = sqlite
+path = ./data/app.db
+
+[database "pg-prod"]
+engine = postgres17
+host = pg01.example.com
+database = app
+username_env = PGUSER
+password_env = PGPASSWORD
+backup_tool = barman
+```
+
+Then run:
+
+```bash
+local26 db doctor
+local26 db tools --engine postgres17
+```
+
+## Optional: run a compliance check
+Start with the Local-26 access policy check before scanning larger paths:
+
+```bash
+local26 compliance report --scope access --no-include-passed
+```
+
+Compliance checks are read-only. They report findings and recommendations; they do not certify the system or apply hardening changes.
 
 ## Good first habits
 - keep `--fail-fast` on for early rollouts

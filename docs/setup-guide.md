@@ -99,6 +99,65 @@ The next operator commands to learn are:
 - `local26 logs <run-id>`
 - `local26 pull --scope main --dry-run`
 - `local26 diag --hosts app01 --dry-run`
+- `local26 db doctor`
+- `local26 compliance report --scope access --no-include-passed`
+
+
+## Database operations setup
+For database checks, add one or more `[database "NAME"]` sections to `.local26/config.ini`.
+
+SQLite targets can be checked locally with Python stdlib only:
+
+```ini
+[database "local-cache"]
+engine = sqlite
+path = ./data/cache.db
+```
+
+Oracle and PostgreSQL targets are managed through external CLI discovery and redacted command plans:
+
+```ini
+[database "oracle-prod"]
+engine = oracle19c
+service_name = ORCLPDB1
+connect_env = ORACLE_CONNECT
+password_env = ORACLE_PASSWORD
+backup_tool = rman
+audit_profile = unified-auditing
+
+[database "pg-prod"]
+engine = postgres17
+host = pg01.example.com
+port = 5432
+database = app
+username_env = PGUSER
+password_env = PGPASSWORD
+backup_tool = barman
+monitoring_tool = postgres_exporter
+```
+
+Use `local26 db doctor` and `local26 db tools` before any backup work. Backup and maintenance actions remain dry-run/planned unless you pass `--execute`.
+
+## Compliance checks setup
+Start with the Local-26 access-policy scanner:
+
+```bash
+local26 compliance report --scope access --no-include-passed
+```
+
+For project or host scans, add a `[compliance]` section to set defaults:
+
+```ini
+[compliance]
+profile = cms-ars-5.1
+root = .
+scope = all
+fail_on = high
+report_dir = .local26/compliance
+include_passed = false
+```
+
+Compliance commands are read-only. They emit findings and manual remediation guidance, but do not apply settings, restart services, install packages, or certify compliance.
 
 ## When something feels wrong
 Do not guess. Use:
