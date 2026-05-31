@@ -7,8 +7,6 @@ from pathlib import Path
 def _find_run(run_id: str, runs_dir: str = ".local81/runs") -> Path | None:
     """Find the run.json file for a given run ID (exact or prefix match)."""
     runs_path = Path(runs_dir)
-    if not runs_path.is_dir() and runs_dir == ".local81/runs":
-        runs_path = Path(".seraf/runs")
     if not runs_path.is_dir():
         return None
     exact = runs_path / run_id / "run.json"

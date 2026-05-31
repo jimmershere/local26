@@ -1,6 +1,6 @@
 .PHONY: test compile shell-test full-shell-test python-test lint format-check security-check quality ci clean-generated
 
-PYTHON ?= python3
+PYTHON ?= $(shell if [ -x .venv/bin/python ]; then printf '%s' .venv/bin/python; else printf '%s' python3; fi)
 BASELINE_SHELL_TESTS := \
 	tests/test_access_policy.sh \
 	tests/test_config_validation.sh \

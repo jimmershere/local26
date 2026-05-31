@@ -80,7 +80,7 @@ def _modern_config_info(path: Path) -> tuple[bool, bool, list[str]]:
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or stripped.startswith(";"):
             continue
-        if stripped in {"[local81]", "[seraf]"}:
+        if stripped == "[local81]":
             has_local81 = True
             in_local81 = True
             continue
@@ -107,7 +107,7 @@ def _upsert_modern_project(path: Path, project: str) -> None:
     saw_local81 = False
     for line in lines:
         stripped = line.strip()
-        if stripped in {"[local81]", "[seraf]"}:
+        if stripped == "[local81]":
             in_local81 = True
             saw_local81 = True
             wrote_project = False
@@ -183,8 +183,6 @@ def run_init(*, import_path: str | None = None, force: bool = False, project: st
         for path in (local81_dir, state_dir, plans_dir, runs_dir, logs_dir):
             _mkdir_private(path)
         shutil.copyfile(legacy, config_path)
-        config_text = config_path.read_text(encoding="utf-8").replace("[seraf]", "[local81]")
-        config_path.write_text(config_text, encoding="utf-8")
         config_path.chmod(0o600)
         if project:
             _upsert_modern_project(config_path, project)

@@ -46,24 +46,24 @@ def _write_config(tmp_path: Path) -> None:
 
 def test_format_pull_command() -> None:
     command = _format_pull_command(
-        host="m2a",
+        host="hosta",
         target_dir=Path("/srv/app"),
         source_dir=Path("/tmp/local/app"),
         rsync_opts="-az --delete",
     )
-    assert command == "rsync -az --delete -- m2a:/srv/app/ /tmp/local/app/"
+    assert command == "rsync -az --delete -- hosta:/srv/app/ /tmp/local/app/"
 
 
 def test_run_pull_dry_run_with_scope_hosts_override(tmp_path: Path, monkeypatch, capsys) -> None:
     _write_config(tmp_path)
     monkeypatch.chdir(tmp_path)
 
-    rc = run_pull(scope="app", hosts="m2a,m2b", dry_run=True)
+    rc = run_pull(scope="app", hosts="hosta,hostb", dry_run=True)
 
     out = capsys.readouterr().out
     assert rc == 0
-    assert '[pull] dry-run scope=app host=m2a cmd=rsync -az -- m2a:/srv/app/ ' in out
-    assert '[pull] dry-run scope=app host=m2b cmd=rsync -az -- m2b:/srv/app/ ' in out
+    assert '[pull] dry-run scope=app host=hosta cmd=rsync -az -- hosta:/srv/app/ ' in out
+    assert '[pull] dry-run scope=app host=hostb cmd=rsync -az -- hostb:/srv/app/ ' in out
     assert 'Pulled files into local source dirs (success=2, failed=0)' in out
 
 
@@ -121,9 +121,9 @@ def test_cli_pull_command() -> None:
     from local81.cli import build_parser
 
     parser = build_parser()
-    args = parser.parse_args(["pull", "--scope", "app", "--hosts", "m2a,m2b", "--rsync-opts", "-az --delete", "--dry-run"])
+    args = parser.parse_args(["pull", "--scope", "app", "--hosts", "hosta,hostb", "--rsync-opts", "-az --delete", "--dry-run"])
     assert args.command == "pull"
     assert args.scope == "app"
-    assert args.hosts == "m2a,m2b"
+    assert args.hosts == "hosta,hostb"
     assert args.rsync_opts == "-az --delete"
     assert args.dry_run is True

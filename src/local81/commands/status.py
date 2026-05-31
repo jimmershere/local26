@@ -28,10 +28,6 @@ def _load_json(path: Path) -> dict | None:
 
 def load_status_record() -> StatusRecord:
     home_state = Path.home() / ".local81" / "state.json"
-    if not home_state.is_file():
-        legacy_home_state = Path.home() / ".seraf" / "state.json"
-        if legacy_home_state.is_file():
-            home_state = legacy_home_state
     if home_state.is_file():
         data = _load_json(home_state) or {}
         return StatusRecord(
@@ -42,8 +38,6 @@ def load_status_record() -> StatusRecord:
         )
 
     tmp_state = Path("/tmp/local81-state.json")
-    if not tmp_state.is_file() and Path("/tmp/seraf-state.json").is_file():
-        tmp_state = Path("/tmp/seraf-state.json")
     if tmp_state.is_file():
         data = _load_json(tmp_state) or {}
         return StatusRecord(
@@ -54,8 +48,6 @@ def load_status_record() -> StatusRecord:
         )
 
     runs_dir = Path(".local81") / "runs"
-    if not runs_dir.is_dir() and (Path(".seraf") / "runs").is_dir():
-        runs_dir = Path(".seraf") / "runs"
     if runs_dir.is_dir():
         run_files = sorted(runs_dir.glob("*/run.json"))
         if run_files:

@@ -55,8 +55,6 @@ def _errors_from_run(data: dict) -> str:
 def list_runs(*, runs_dir: str = ".local81/runs", limit: int = 20) -> list[dict]:
     """Return recent run summaries, newest first."""
     runs_path = Path(runs_dir)
-    if not runs_path.is_dir() and runs_dir == ".local81/runs":
-        runs_path = Path(".seraf/runs")
     if not runs_path.is_dir():
         return []
     run_files = sorted(runs_path.glob("*/run.json"), reverse=True)
