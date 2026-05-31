@@ -29,10 +29,14 @@ source .venv/bin/activate
 pip install -U pip
 pip install -e .[dev]
 ```
+Local-81 currently targets Python 3.12 or newer.
 
 ## Verify before proposing changes
 ```bash
-pytest -q
+make test
+make python-test
+make quality
+make full-shell-test
 python -m local81.cli --help
 python -m local81.cli doctor --help
 python -m local81.cli deploy --help

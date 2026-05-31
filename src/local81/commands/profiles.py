@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from local81.profiles import list_profiles, profiles_dir, scaffold_profile
 
 
