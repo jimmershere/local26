@@ -11,3 +11,36 @@ scopes:
 
 notifications:
   notify_on_success: true
+compliance:
+  enabled: true
+  profile: cms-ars-5.1
+  scope: all
+  fail_on: high
+  report_dir: .local81/compliance
+  controls:
+    - NIST_SP_800_53:AC-3
+    - NIST_SP_800_53:CM-6
+    - CMS_ARS:SC-7
+  waivers: []
+
+databases:
+  app-sqlite:
+    engine: sqlite
+    path: ./data/app.db
+    tags: [local, app]
+  pg-prod:
+    engine: postgres17
+    host: pg01.example.com
+    port: 5432
+    database: app
+    username_env: PGUSER
+    password_env: PGPASSWORD
+    backup_tool: barman
+    monitoring_tool: postgres_exporter
+  oracle-prod:
+    engine: oracle19c
+    service_name: ORCLPDB1
+    connect_env: ORACLE_CONNECT
+    password_env: ORACLE_PASSWORD
+    backup_tool: rman
+    audit_profile: unified-auditing

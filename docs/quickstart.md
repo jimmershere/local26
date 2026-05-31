@@ -56,7 +56,43 @@ local81 history --limit 5
 local81 logs <run-id>
 local81 pull --scope main --dry-run
 local81 diag --hosts app01 --dry-run
+local81 db doctor
+local81 compliance report --scope access --no-include-passed
 ```
+
+
+## Optional: add database targets
+Add database targets to `.local81/config.ini` when you want Local-81 to check database readiness:
+
+```ini
+[database "app-sqlite"]
+engine = sqlite
+path = ./data/app.db
+
+[database "pg-prod"]
+engine = postgres17
+host = pg01.example.com
+database = app
+username_env = PGUSER
+password_env = PGPASSWORD
+backup_tool = barman
+```
+
+Then run:
+
+```bash
+local81 db doctor
+local81 db tools --engine postgres17
+```
+
+## Optional: run a compliance check
+Start with the Local-81 access policy check before scanning larger paths:
+
+```bash
+local81 compliance report --scope access --no-include-passed
+```
+
+Compliance checks are read-only. They report findings and recommendations; they do not certify the system or apply hardening changes.
 
 ## Good first habits
 - keep `--fail-fast` on for early rollouts

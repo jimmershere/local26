@@ -32,6 +32,10 @@ local81 --help
 local81 init --guided
 local81 doctor
 local81 compliance report
+local81 compliance inventory --scope all
+local81 compliance harden-plan --scope linux --format markdown
+local81 db doctor
+local81 db inventory
 local81 plan --summary
 local81 deploy --plan .local81/plans/<plan>.plan.json --check --dry-run
 local81 history --limit 5
@@ -42,6 +46,32 @@ local81 status
 ```
 
 Guided setup writes both `.local81/config.ini` for the current runtime and `.local81/config.yaml` as a human-readable mirror.
+
+## Database operations
+
+Local-81 includes a database operations command group for configured Oracle 19c, PostgreSQL 17, and SQLite targets:
+
+```bash
+local81 db doctor
+local81 db tools --engine postgres17
+local81 db diag --target appdb
+local81 db backup --target local-sqlite --backup-path .local81/db/app.db.bak --execute
+local81 db audit --format json
+```
+
+Database targets are configured as `[database "NAME"]` sections in `.local81/config.ini` or under `databases:` in YAML. Oracle and PostgreSQL integrations are safe external-tool plans and discovery checks; SQLite diagnostics and backups use Python stdlib `sqlite3`. Mutating actions are dry-run/planned unless `--execute` is supplied, and secrets must be passed as environment variable names or external references.
+
+## Compliance and hardening
+
+Local-81 includes read-only operational checks mapped to selected NIST/CMS control themes for Local-81 access policy, Linux OS settings, web server configuration, Java/Tomcat, JavaScript, Node.js, and Angular projects:
+
+```bash
+local81 compliance report --scope all
+local81 compliance inventory --path /srv/myapp --format json
+local81 compliance harden-plan --scope web --path /srv/myapp --format markdown
+```
+
+The compliance scanners inspect local files and emit findings, inventory, and hardening recommendations. They do not certify compliance, run package installs, run online audits, call `sudo`, call `sysctl -w`, restart services, change permissions, or edit configs. `harden-plan` is advisory only; it writes suggested remediation steps but does not apply them.
 
 ## Verify a fresh clone
 

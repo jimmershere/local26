@@ -99,6 +99,65 @@ The next operator commands to learn are:
 - `local81 logs <run-id>`
 - `local81 pull --scope main --dry-run`
 - `local81 diag --hosts app01 --dry-run`
+- `local81 db doctor`
+- `local81 compliance report --scope access --no-include-passed`
+
+
+## Database operations setup
+For database checks, add one or more `[database "NAME"]` sections to `.local81/config.ini`.
+
+SQLite targets can be checked locally with Python stdlib only:
+
+```ini
+[database "local-cache"]
+engine = sqlite
+path = ./data/cache.db
+```
+
+Oracle and PostgreSQL targets are managed through external CLI discovery and redacted command plans:
+
+```ini
+[database "oracle-prod"]
+engine = oracle19c
+service_name = ORCLPDB1
+connect_env = ORACLE_CONNECT
+password_env = ORACLE_PASSWORD
+backup_tool = rman
+audit_profile = unified-auditing
+
+[database "pg-prod"]
+engine = postgres17
+host = pg01.example.com
+port = 5432
+database = app
+username_env = PGUSER
+password_env = PGPASSWORD
+backup_tool = barman
+monitoring_tool = postgres_exporter
+```
+
+Use `local81 db doctor` and `local81 db tools` before any backup work. Backup and maintenance actions remain dry-run/planned unless you pass `--execute`.
+
+## Compliance checks setup
+Start with the Local-81 access-policy scanner:
+
+```bash
+local81 compliance report --scope access --no-include-passed
+```
+
+For project or host scans, add a `[compliance]` section to set defaults:
+
+```ini
+[compliance]
+profile = cms-ars-5.1
+root = .
+scope = all
+fail_on = high
+report_dir = .local81/compliance
+include_passed = false
+```
+
+Compliance commands are read-only. They emit findings and manual remediation guidance, but do not apply settings, restart services, install packages, or certify compliance.
 
 ## When something feels wrong
 Do not guess. Use:

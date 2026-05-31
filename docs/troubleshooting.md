@@ -80,6 +80,35 @@ Start smaller:
 - add `--pid` only when you know the target process
 - keep duration short, for example `--duration 20s`
 
+
+## `local81 db doctor` says no targets matched
+Add `[database "NAME"]` sections to `.local81/config.ini` or a `databases:` mapping in `.local81/config.yaml`. Make sure each target has `engine = oracle19c`, `engine = postgres17`, or `engine = sqlite`, and that `enabled` is not set to `false`.
+
+## `local81 db` reports missing Oracle or PostgreSQL tools
+Oracle and PostgreSQL support wraps installed CLIs. Install the relevant client tools on the operator or managed host:
+- Oracle: SQL*Plus or SQLcl, RMAN, Data Pump, ADRCI, listener tools, AHF/ORAchk where supportable
+- PostgreSQL: `psql`, `pg_dump`, `pg_basebackup`, Barman or pgBackRest, exporters, pgBadger
+
+Missing tools are warnings unless a live operational workflow depends on them.
+
+## `local81 db backup` did not create a SQLite backup
+SQLite backups require both an explicit destination and execution approval:
+
+```bash
+local81 db backup --target local-cache --backup-path .local81/db/local-cache.bak --execute
+```
+
+Without `--execute`, Local-81 only writes a backup plan.
+
+## `local81 compliance report` exits nonzero
+By default, `report` exits nonzero when a failed finding is `high` or `critical`. To review findings without failing the command, run:
+
+```bash
+local81 compliance report --fail-on never
+```
+
+To reduce noise while reviewing gaps, add `--no-include-passed`.
+
 ## Where to look when confused
 In order:
 1. `local81 doctor`

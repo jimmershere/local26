@@ -5,7 +5,8 @@
 ```
 local81 init [--import PATH] [--force] [--project NAME] [--guided]
 local81 doctor [--plan PATH]
-local81 compliance report
+local81 db <doctor|inventory|tools|monitor|diag|backup|report|audit> [options]
+local81 compliance <report|inventory|harden-plan> [options]
 local81 status
 local81 hooks
 local81 profiles
@@ -105,6 +106,50 @@ Before any steps run, deploy enforces the configured `[access]` policy from `.lo
 ```bash
 local81 deploy --plan .local81/plans/<plan-id>.plan.json --scope main --dry-run --fail-fast
 local81 deploy --plan .local81/plans/<plan-id>.plan.json --scope main --fail-fast
+```
+
+
+---
+
+## `local81 db`
+
+Manages database operational checks and reports for configured Oracle 19c, PostgreSQL 17, and SQLite targets.
+
+Subcommands:
+
+- `doctor` — validate target config, discover tools, and run safe readiness checks
+- `inventory` — list configured targets and tool availability
+- `tools` — show database tool discovery status
+- `monitor` — emit monitoring readiness plans
+- `diag` — run or plan diagnostics
+- `backup` — plan backups, or execute supported SQLite backups with `--execute`
+- `report` — write normalized JSON and text reports
+- `audit` — emit audit/compliance readiness checks
+
+Common options:
+
+| Flag | Description |
+|---|---|
+| `--config PATH` | Config file to read, default `.local81/config.ini` with YAML fallback |
+| `--target NAME` | Restrict to one database target |
+| `--engine oracle19c|postgres17|sqlite` | Restrict by engine |
+| `--output-dir DIR` | Artifact root, default `.local81/db` |
+| `--format text|json` | Terminal output format |
+| `--quick` | Skip slower checks where supported |
+| `--execute` | Required for state-changing actions |
+| `--backup-path PATH` | Destination for executable SQLite backups |
+
+Reports are written under `.local81/db/<run-id>/summary.json` and `report.txt`.
+
+Oracle and PostgreSQL support is intentionally CLI-oriented. Local-81 discovers tools and emits redacted command plans for SQL*Plus/SQLcl, RMAN, Data Pump, AHF/ORAchk, `psql`, native PostgreSQL backup tools, Barman, pgBackRest, exporters, and pgBadger without requiring live services in CI. SQLite uses Python stdlib `sqlite3` for read-only PRAGMA diagnostics and optional online backup.
+
+Examples:
+
+```bash
+local81 db doctor
+local81 db tools --engine oracle19c
+local81 db diag --target app-sqlite --quick
+local81 db backup --target app-sqlite --backup-path .local81/db/app.sqlite.bak --execute
 ```
 
 ---
@@ -296,7 +341,9 @@ Exit code: `0` if all checks pass, `1` if any check is FAIL.
 
 ## `local81 compliance report`
 
-Prints a NIST/CMS-style operational hardening report focused on access control and least privilege.
+Prints a read-only operational hardening report mapped to selected NIST/CMS control themes. The report includes the existing Local-81 access-control policy checks plus optional local scanners for Linux OS configuration, web server settings, Java/Tomcat, JavaScript, Node.js, and Angular projects.
+
+This command reports evidence and recommendations; it does not certify a system or prove compliance.
 
 The report includes:
 
@@ -307,5 +354,43 @@ The report includes:
 | Root execution policy | AC-6 | Warns unless `deny_root = true` |
 | Remote command policy | CM-5 | Passes when `allow_remote_cmd = false` |
 | Runtime/artifact permissions | AC-6 | Confirms directories/files are owner-only by design |
+| Linux OS settings | CM-6, SC-7, IA-5, AU-12 | Checks readable SSH, sysctl, fstab, sudo/PAM, audit, and permission evidence |
+| Web server settings | SC-8, SC-13, SC-7, AU-12 | Checks Apache/Nginx/Tomcat TLS, header, logging, timeout, token, and TRACE evidence |
+| Java/Tomcat settings | AC-3, CM-7, SC-7 | Checks JDWP, JMX, Tomcat shutdown port, manager/default apps, and access logging evidence |
+| JS/Node/Angular settings | CM-6, SA-10, SI-10, SC-28 | Checks lockfiles, package manager pinning, lifecycle scripts, npm config, source maps, and risky Angular patterns |
 
-Exit code: `0` unless any finding is FAIL. A FAIL usually means the current actor is denied by policy.
+Options:
+
+| Flag | Description |
+|---|---|
+| `--root PATH` / `--path PATH` | Root path to inspect, default current directory |
+| `--scope all|access|linux|os|web|java|javascript|node|angular` | Restrict scanner scope |
+| `--profile NAME` | Compliance profile label for the report |
+| `--format text|json|markdown` | Output format |
+| `--include-passed` / `--no-include-passed` | Include passing findings, or show only gaps |
+| `--fail-on never|low|medium|high|critical` | Exit nonzero when a failed finding meets the threshold |
+| `--output-dir DIR` | Write `.txt` and `.json` artifacts under a timestamped directory |
+
+Exit code: `0` unless a failed finding meets `--fail-on`. Defaults to `--fail-on high`.
+
+## `local81 compliance inventory`
+
+Lists discovered compliance evidence candidates without judging them. This command is read-only and never fails due to hardening findings.
+
+Examples:
+
+```bash
+local81 compliance inventory --path /srv/myapp
+local81 compliance inventory --path /srv/myapp --format json
+```
+
+## `local81 compliance harden-plan`
+
+Generates a non-mutating remediation plan from compliance findings. It prints recommended settings and manual review notes but does not edit files, change permissions, restart services, run `sudo`, install packages, or contact external services.
+
+Examples:
+
+```bash
+local81 compliance harden-plan --scope linux --path /
+local81 compliance harden-plan --scope web --path /srv/myapp --format markdown
+```

@@ -69,3 +69,34 @@ def test_main_dispatches_guided_init(monkeypatch) -> None:
 
     assert cli.main() == 8
     assert called == {"force": True}
+
+
+def test_main_dispatches_db_doctor(monkeypatch) -> None:
+    called: dict[str, str] = {}
+
+    def fake_run_db(args) -> int:
+        called["command"] = args.db_command
+        called["target"] = args.target
+        return 12
+
+    monkeypatch.setattr(cli, "run_db", fake_run_db)
+    monkeypatch.setattr("sys.argv", ["local81", "db", "doctor", "--target", "main"])
+
+    assert cli.main() == 12
+    assert called == {"command": "doctor", "target": "main"}
+
+
+def test_main_dispatches_compliance_harden_plan(monkeypatch) -> None:
+    called: dict[str, str] = {}
+
+    def fake_run_compliance(args) -> int:
+        called["command"] = args.compliance_command
+        called["scope"] = args.scope
+        called["format"] = args.format
+        return 13
+
+    monkeypatch.setattr(cli, "run_compliance", fake_run_compliance)
+    monkeypatch.setattr("sys.argv", ["local81", "compliance", "harden-plan", "--scope", "linux", "--format", "json"])
+
+    assert cli.main() == 13
+    assert called == {"command": "harden-plan", "scope": "linux", "format": "json"}
