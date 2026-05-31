@@ -9,9 +9,9 @@ test_pull_dry_run_with_scope_hosts_override() {
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "$tmpdir"' RETURN
 
-  mkdir -p "$tmpdir/.seraf"
-  cat > "$tmpdir/.seraf/config.ini" <<CFG
-[seraf]
+  mkdir -p "$tmpdir/.local81"
+  cat > "$tmpdir/.local81/config.ini" <<CFG
+[local81]
 version = 0.1
 
 [scope "app"]
@@ -29,11 +29,11 @@ CFG
 
   (
     cd "$tmpdir"
-    "$repo_root/bin/seraf" pull --scope app --hosts "m2a,m2b" --dry-run >"$tmpdir/out.txt"
+    "$repo_root/bin/local81" pull --scope app --hosts "m2a,m2b" --dry-run >"$tmpdir/out.txt"
   )
 
-  grep -q '\[pull\] dry-run scope=app host=m2a cmd=rsync -az -- "m2a:/srv/app/" "'${tmpdir}'/src/app/"' "$tmpdir/out.txt"
-  grep -q '\[pull\] dry-run scope=app host=m2b cmd=rsync -az -- "m2b:/srv/app/" "'${tmpdir}'/src/app/"' "$tmpdir/out.txt"
+  grep -q '\[pull\] dry-run scope=app host=m2a cmd=rsync -az -- m2a:/srv/app/ '${tmpdir}'/src/app/' "$tmpdir/out.txt"
+  grep -q '\[pull\] dry-run scope=app host=m2b cmd=rsync -az -- m2b:/srv/app/ '${tmpdir}'/src/app/' "$tmpdir/out.txt"
   grep -q 'Pulled files into local source dirs (success=2, failed=0)' "$tmpdir/out.txt"
 }
 
@@ -42,9 +42,9 @@ test_pull_uses_rsync_stub() {
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "$tmpdir"' RETURN
 
-  mkdir -p "$tmpdir/.seraf" "$tmpdir/stubs"
-  cat > "$tmpdir/.seraf/config.ini" <<CFG
-[seraf]
+  mkdir -p "$tmpdir/.local81" "$tmpdir/stubs"
+  cat > "$tmpdir/.local81/config.ini" <<CFG
+[local81]
 version = 0.1
 
 [scope "app"]
@@ -57,14 +57,14 @@ CFG
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$*" >> "${SERAF_STUB_LOG}"
+printf '%s\n' "$*" >> "${LOCAL81_STUB_LOG}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/rsync.log"
+  export LOCAL81_STUB_LOG="$tmpdir/rsync.log"
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" pull >"$tmpdir/out.txt"
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" pull >"$tmpdir/out.txt"
   )
 
   grep -q 'm2host:/srv/app/' "$tmpdir/rsync.log"
@@ -77,9 +77,9 @@ test_pull_missing_scope_fails() {
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "$tmpdir"' RETURN
 
-  mkdir -p "$tmpdir/.seraf"
-  cat > "$tmpdir/.seraf/config.ini" <<'CFG'
-[seraf]
+  mkdir -p "$tmpdir/.local81"
+  cat > "$tmpdir/.local81/config.ini" <<'CFG'
+[local81]
 version = 0.1
 
 [scope "app"]
@@ -92,7 +92,7 @@ CFG
   set +e
   (
     cd "$tmpdir"
-    "$repo_root/bin/seraf" pull --scope nope >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
+    "$repo_root/bin/local81" pull --scope nope >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   )
   local rc=$?
   set -e

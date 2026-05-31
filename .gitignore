@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
-.seraf/
+.local81/
 .brv/
+*.egg-info/
+tools/SF-*.b64.txt

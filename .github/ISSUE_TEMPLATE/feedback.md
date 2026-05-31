@@ -1,6 +1,6 @@
 ---
 name: Feedback / Workflow Idea
-about: Suggest a workflow improvement, usability fix, or operator-facing idea for Seraf
+about: Suggest a workflow improvement, usability fix, or operator-facing idea for Local-81
 title: "[feedback] "
 labels: [feedback]
 assignees: []

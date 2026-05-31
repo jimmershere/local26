@@ -1,9 +1,9 @@
-# Seraf setup guide
+# Local-81 setup guide
 
 This guide walks a new operator from zero to a usable Phase 1 setup.
 
-## What Seraf needs
-Seraf is a textual deployment helper. For Phase 1, it helps you:
+## What Local-81 needs
+Local-81 is a textual deployment helper. For Phase 1, it helps you:
 - create a project config
 - inspect readiness
 - generate a deploy plan
@@ -11,7 +11,7 @@ Seraf is a textual deployment helper. For Phase 1, it helps you:
 - review the latest result
 
 ## Before you start
-Make sure these tools are available on the machine running Seraf:
+Make sure these tools are available on the machine running Local-81:
 - bash
 - python3
 - ssh
@@ -20,7 +20,7 @@ Make sure these tools are available on the machine running Seraf:
 - sha256sum
 
 ## Project layout
-Seraf stores project-local files under `.seraf/`:
+Local-81 stores project-local files under `.local81/`:
 - `config.ini` for the current runtime configuration
 - `config.yaml` as a human-friendly mirror of the guided setup output
 - `state/` for per-scope state
@@ -36,7 +36,7 @@ cd /path/to/project
 
 ### Step 2: create the config with guided setup
 ```bash
-seraf init --guided
+local81 init --guided
 ```
 The guided flow is the easiest front door. It asks one decision at a time, covers hosts / rsync / backups, and shows a config preview before writing anything.
 
@@ -52,38 +52,38 @@ If anything looks off, choose `edit` and run through the interview again.
 
 ### Step 4: run environment checks
 ```bash
-seraf doctor
+local81 doctor
 ```
 Warnings are not always blockers, but failures usually are.
 
 ### Step 5: generate the first deploy plan
 ```bash
-seraf plan --summary
+local81 plan --summary
 ```
 This gives you a readable summary instead of a raw JSON dump.
 
 ### Step 6: do a dry run deploy
 ```bash
-seraf deploy --plan .seraf/plans/<plan-id>.plan.json --scope main --dry-run
+local81 deploy --plan .local81/plans/<plan-id>.plan.json --scope main --dry-run
 ```
 Dry run mode is the safest way to verify the path before a live push.
 
 ### Step 7: run the live deploy
 ```bash
-seraf deploy --plan .seraf/plans/<plan-id>.plan.json --scope main --fail-fast
+local81 deploy --plan .local81/plans/<plan-id>.plan.json --scope main --fail-fast
 ```
 
 ### Step 8: confirm the result
 ```bash
-seraf status
+local81 status
 ```
 
 ## Legacy config import
 If you already have an older settings file:
 ```bash
-seraf init --import ./settings.cfg
+local81 init --import ./settings.cfg
 ```
-Seraf converts it into `.seraf/config.ini` and creates the expected local directories. Guided setup also writes `.seraf/config.yaml` for easier human review.
+Local-81 converts it into `.local81/config.ini` and creates the expected local directories. Guided setup also writes `.local81/config.yaml` for easier human review.
 
 ## Operator guidance
 For early rollouts:
@@ -91,18 +91,18 @@ For early rollouts:
 - keep worker count low
 - keep backups enabled
 - use dry runs generously
-- review the run record in `.seraf/runs/`
+- review the run record in `.local81/runs/`
 
 ## After the first deploy path works
 The next operator commands to learn are:
-- `seraf history --limit 5`
-- `seraf logs <run-id>`
-- `seraf pull --scope main --dry-run`
-- `seraf diag --hosts app01 --dry-run`
+- `local81 history --limit 5`
+- `local81 logs <run-id>`
+- `local81 pull --scope main --dry-run`
+- `local81 diag --hosts app01 --dry-run`
 
 ## When something feels wrong
 Do not guess. Use:
-- `seraf doctor`
-- `seraf status`
-- the most recent `.seraf/runs/*/run.json`
+- `local81 doctor`
+- `local81 status`
+- the most recent `.local81/runs/*/run.json`
 - `docs/troubleshooting.md`

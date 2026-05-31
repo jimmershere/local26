@@ -22,10 +22,10 @@ CFG
 
 (
   cd "$tmpdir"
-  "$repo_root/bin/seraf" init --force --project summarytest >/dev/null
+  "$repo_root/bin/local81" init --force --project summarytest >/dev/null
 
   # Clear last_success so all files are selected
-  python3 - <<'PY' "$tmpdir/.seraf/state/myapp.json"
+  python3 - <<'PY' "$tmpdir/.local81/state/myapp.json"
 import json, sys
 with open(sys.argv[1]) as f:
     d = json.load(f)
@@ -35,7 +35,7 @@ with open(sys.argv[1], "w") as f:
 PY
 
   # ── Test 1: --summary outputs compact one-liners ──────────────────────────
-  out="$("$repo_root/bin/seraf" plan --summary 2>&1)"
+  out="$("$repo_root/bin/local81" plan --summary 2>&1)"
 
   # Should have pipe-delimited lines
   line_count="$(printf '%s\n' "$out" | grep -c '|' || true)"
@@ -61,11 +61,11 @@ PY
   [ "$plan_id_lines" -eq 0 ] || { printf 'FAIL: --summary should not print plan_id line\n'; exit 1; }
 
   # ── Test 3: plan file is still written (non-ci mode) ─────────────────────
-  plan_count="$(find .seraf/plans -name '*.plan.json' 2>/dev/null | wc -l | tr -d ' ')"
+  plan_count="$(find .local81/plans -name '*.plan.json' 2>/dev/null | wc -l | tr -d ' ')"
   [ "$plan_count" -ge 1 ] || { printf 'FAIL: plan file not written with --summary\n'; exit 1; }
 
   # ── Test 4: --summary works combined with --scope ─────────────────────────
-  out2="$("$repo_root/bin/seraf" plan --summary --scope myapp 2>&1)"
+  out2="$("$repo_root/bin/local81" plan --summary --scope myapp 2>&1)"
   printf '%s\n' "$out2" | grep -q "scope:myapp:" || { printf 'FAIL: --summary --scope did not produce myapp steps\n'; exit 1; }
 )
 

@@ -11,16 +11,16 @@ trap 'rm -rf "$tmpdir"' EXIT
 (
   cd "$tmpdir"
 
-  out="$($repo_root/bin/seraf profile create prod 2>&1)"
+  out="$($repo_root/bin/local81 profile create prod 2>&1)"
   printf '%s\n' "$out" | grep -q "Created profile:" || { printf 'FAIL: missing create confirmation\n'; exit 1; }
-  test -f .seraf/profiles/prod.yaml || { printf 'FAIL: profile file was not created\n'; exit 1; }
+  test -f .local81/profiles/prod.yaml || { printf 'FAIL: profile file was not created\n'; exit 1; }
 
-  out="$($repo_root/bin/seraf profiles 2>&1)"
-  printf '%s\n' "$out" | grep -q "Seraf profiles" || { printf 'FAIL: missing profiles header\n'; exit 1; }
+  out="$($repo_root/bin/local81 profiles 2>&1)"
+  printf '%s\n' "$out" | grep -q "Local-81 profiles" || { printf 'FAIL: missing profiles header\n'; exit 1; }
   printf '%s\n' "$out" | grep -q '^prod$' || { printf 'FAIL: missing created profile in listing\n'; exit 1; }
 
   duplicate_out="$tmpdir/profile-duplicate.out"
-  if "$repo_root/bin/seraf" profile create prod >"$duplicate_out" 2>&1; then
+  if "$repo_root/bin/local81" profile create prod >"$duplicate_out" 2>&1; then
     printf 'FAIL: duplicate profile create should fail\n'
     exit 1
   fi
@@ -30,15 +30,15 @@ trap 'rm -rf "$tmpdir"' EXIT
 # hooks renders installed/missing states through the shell wrapper
 (
   cd "$tmpdir"
-  mkdir -p .seraf/hooks
-  cat > .seraf/hooks/pre-deploy.sh <<'HOOK'
+  mkdir -p .local81/hooks
+  cat > .local81/hooks/pre-deploy.sh <<'HOOK'
 #!/usr/bin/env bash
 exit 0
 HOOK
-  chmod +x .seraf/hooks/pre-deploy.sh
+  chmod +x .local81/hooks/pre-deploy.sh
 
-  out="$($repo_root/bin/seraf hooks 2>&1)"
-  printf '%s\n' "$out" | grep -q "Seraf hooks" || { printf 'FAIL: missing hooks header\n'; exit 1; }
+  out="$($repo_root/bin/local81 hooks 2>&1)"
+  printf '%s\n' "$out" | grep -q "Local-81 hooks" || { printf 'FAIL: missing hooks header\n'; exit 1; }
   printf '%s\n' "$out" | grep -q "pre-deploy.sh: installed" || { printf 'FAIL: missing installed hook state\n'; exit 1; }
   printf '%s\n' "$out" | grep -q "post-deploy.sh: missing" || { printf 'FAIL: missing absent hook state\n'; exit 1; }
 )

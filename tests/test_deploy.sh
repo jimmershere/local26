@@ -6,22 +6,22 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 make_workspace() {
   local dir="$1"
-  mkdir -p "$dir/.seraf/state" "$dir/.seraf/plans" "$dir/.seraf/runs" "$dir/stubs"
-  cat > "$dir/.seraf/config.ini" <<'CFG'
-[seraf]
+  mkdir -p "$dir/.local81/state" "$dir/.local81/plans" "$dir/.local81/runs" "$dir/stubs"
+  cat > "$dir/.local81/config.ini" <<'CFG'
+[local81]
 version = 0.1
 CFG
 
   local fp
-  fp="$(sha256sum "$dir/.seraf/config.ini" | awk '{print $1}')"
-  python3 - <<'PY' "$dir/.seraf/plans/test.plan.json" "$fp"
+  fp="$(sha256sum "$dir/.local81/config.ini" | awk '{print $1}')"
+  python3 - <<'PY' "$dir/.local81/plans/test.plan.json" "$fp"
 import json,sys
 path,fp=sys.argv[1:]
 plan={
-  "schema":"seraf.plan.v0.1",
+  "schema":"local81.plan.v0.1",
   "kind":"plan",
   "mode":"deploy",
-  "seraf_version":"0.1",
+  "local81_version":"0.1",
   "plan_id":"p1",
   "created_at":"2024-01-01T00:00:00Z",
   "config_fingerprint":f"sha256:{fp}",
@@ -43,20 +43,20 @@ PY
   cat > "$dir/stubs/ssh" <<'SSH'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'ssh %s\n' "$*" >> "${SERAF_STUB_LOG}"
+printf 'ssh %s\n' "$*" >> "${LOCAL81_STUB_LOG}"
 SSH
   chmod +x "$dir/stubs/ssh"
 
 cat > "$dir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync %s\n' "$*" >> "${SERAF_STUB_LOG}"
-if [ "${SERAF_PIPE_OUTPUT:-0}" = "1" ]; then
+printf 'rsync %s\n' "$*" >> "${LOCAL81_STUB_LOG}"
+if [ "${LOCAL81_PIPE_OUTPUT:-0}" = "1" ]; then
   printf 'out|pipe\n'
   printf 'err|pipe\n' >&2
 fi
-if [ "${SERAF_FAIL_SECOND_RSYNC:-0}" = "1" ]; then
-  nfile="${SERAF_STUB_LOG}.count"
+if [ "${LOCAL81_FAIL_SECOND_RSYNC:-0}" = "1" ]; then
+  nfile="${LOCAL81_STUB_LOG}.count"
   n=0
   if [ -f "$nfile" ]; then
     n="$(cat "$nfile")"
@@ -77,14 +77,14 @@ assert_pipe_output_preserved() {
   trap 'rm -rf "$tmpdir"' RETURN
   make_workspace "$tmpdir"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   (
     cd "$tmpdir"
-    SERAF_PIPE_OUTPUT=1 PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web --max-parallel 1 >"$tmpdir/out.txt"
+    LOCAL81_PIPE_OUTPUT=1 PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy --plan "$tmpdir/.local81/plans/test.plan.json" --scope web --max-parallel 1 >"$tmpdir/out.txt"
   )
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
-  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | sort | tail -n1)"
+  python3 - <<'PY' "$tmpdir/.local81/runs/$run_dir/run.json"
 import json,sys
 run=json.load(open(sys.argv[1]))
 rsync=[s for s in run["steps"] if s["type"]=="rsync"]
@@ -100,7 +100,7 @@ test_parallel_race_runjson_integrity() {
   trap 'rm -rf "$tmpdir"' RETURN
   make_workspace "$tmpdir"
 
-  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+  python3 - <<'PY' "$tmpdir/.local81/plans/test.plan.json"
 import json,sys
 path=sys.argv[1]
 with open(path, encoding="utf-8") as f:
@@ -123,24 +123,24 @@ PY
 set -euo pipefail
 jitter_pre_ms=$((RANDOM % 201))
 sleep "0.$(printf '%03d' "$jitter_pre_ms")"
-printf 'rsync %s\n' "$*" >> "${SERAF_STUB_LOG}"
+printf 'rsync %s\n' "$*" >> "${LOCAL81_STUB_LOG}"
 jitter_post_ms=$((RANDOM % 201))
 sleep "0.$(printf '%03d' "$jitter_post_ms")"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   set +e
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" timeout -k 5 90 "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web --max-parallel 10 >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
+    PATH="$tmpdir/stubs:$PATH" timeout -k 5 90 "$repo_root/bin/local81" deploy --plan "$tmpdir/.local81/plans/test.plan.json" --scope web --max-parallel 10 >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   )
   deploy_rc=$?
   set -e
   [ "$deploy_rc" -eq 0 ] || { echo "parallel deploy failed rc=$deploy_rc"; cat "$tmpdir/err.txt"; return 1; }
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
-  run_json_path="$tmpdir/.seraf/runs/$run_dir/run.json"
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | sort | tail -n1)"
+  run_json_path="$tmpdir/.local81/runs/$run_dir/run.json"
   [ -f "$run_json_path" ]
 
   python3 - <<'PY' "$run_json_path"
@@ -221,14 +221,14 @@ assert_success_case() {
   trap 'rm -rf "$tmpdir"' RETURN
   make_workspace "$tmpdir"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web --max-parallel 2 >"$tmpdir/out.txt"
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy --plan "$tmpdir/.local81/plans/test.plan.json" --scope web --max-parallel 2 >"$tmpdir/out.txt"
   )
 
-  [ -s "$SERAF_STUB_LOG" ]
-  python3 - <<'PY' "$SERAF_STUB_LOG"
+  [ -s "$LOCAL81_STUB_LOG" ]
+  python3 - <<'PY' "$LOCAL81_STUB_LOG"
 import sys
 lines=[l.strip() for l in open(sys.argv[1]) if l.strip()]
 assert lines[0].startswith("ssh "), lines
@@ -236,11 +236,11 @@ assert lines[1].startswith("rsync "), lines
 assert lines[2].startswith("rsync "), lines
 PY
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
-  [ -f "$tmpdir/.seraf/runs/$run_dir/run.json" ]
-  [ -f "$tmpdir/.seraf/runs/$run_dir/run.log" ]
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | sort | tail -n1)"
+  [ -f "$tmpdir/.local81/runs/$run_dir/run.json" ]
+  [ -f "$tmpdir/.local81/runs/$run_dir/run.log" ]
 
-  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json" "$tmpdir/.seraf/state/web.json"
+  python3 - <<'PY' "$tmpdir/.local81/runs/$run_dir/run.json" "$tmpdir/.local81/state/web.json"
 import json,sys
 run=json.load(open(sys.argv[1]))
 assert run["dry_run"] is False
@@ -259,16 +259,16 @@ assert_failure_case() {
   trap 'rm -rf "$tmpdir"' RETURN
   make_workspace "$tmpdir"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   set +e
   (
     cd "$tmpdir"
-    SERAF_FAIL_SECOND_RSYNC=1 PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web --max-parallel 1 >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
+    LOCAL81_FAIL_SECOND_RSYNC=1 PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy --plan "$tmpdir/.local81/plans/test.plan.json" --scope web --max-parallel 1 >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   )
   rc=$?
   set -e
   [ "$rc" -ne 0 ]
-  [ ! -f "$tmpdir/.seraf/state/web.json" ]
+  [ ! -f "$tmpdir/.local81/state/web.json" ]
 }
 
 
@@ -278,7 +278,7 @@ assert_remote_cmd_barrier_ordering() {
   trap 'rm -rf "$tmpdir"' RETURN
   make_workspace "$tmpdir"
 
-  python3 - <<'PY2' "$tmpdir/.seraf/plans/test.plan.json"
+  python3 - <<'PY2' "$tmpdir/.local81/plans/test.plan.json"
 import json,sys
 path=sys.argv[1]
 with open(path, encoding="utf-8") as f:
@@ -306,28 +306,28 @@ else
     tag="b"
   fi
 fi
-printf 'rsync-start:%s\n' "$tag" >> "${SERAF_STUB_LOG}"
+printf 'rsync-start:%s\n' "$tag" >> "${LOCAL81_STUB_LOG}"
 if [ "$tag" != "c" ]; then
   sleep 0.2
 fi
-printf 'rsync-end:%s\n' "$tag" >> "${SERAF_STUB_LOG}"
+printf 'rsync-end:%s\n' "$tag" >> "${LOCAL81_STUB_LOG}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
   cat > "$tmpdir/stubs/ssh" <<'SSH'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'ssh:%s\n' "$*" >> "${SERAF_STUB_LOG}"
+printf 'ssh:%s\n' "$*" >> "${LOCAL81_STUB_LOG}"
 SSH
   chmod +x "$tmpdir/stubs/ssh"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web --max-parallel 2 >"$tmpdir/out.txt"
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy --plan "$tmpdir/.local81/plans/test.plan.json" --scope web --max-parallel 2 >"$tmpdir/out.txt"
   )
 
-  python3 - <<'PY2' "$SERAF_STUB_LOG"
+  python3 - <<'PY2' "$LOCAL81_STUB_LOG"
 import sys
 lines=[l.strip() for l in open(sys.argv[1]) if l.strip()]
 remote_idx=next(i for i,l in enumerate(lines) if l.startswith("ssh:h1 systemctl stop app"))
@@ -346,17 +346,17 @@ assert_deploy_latest_uses_newest_plan() {
   trap 'rm -rf "$tmpdir"' RETURN
   make_workspace "$tmpdir"
 
-  cp "$tmpdir/.seraf/plans/test.plan.json" "$tmpdir/.seraf/plans/20260430T010101Z-old.plan.json"
-  cp "$tmpdir/.seraf/plans/test.plan.json" "$tmpdir/.seraf/plans/20260501T020202Z-new.plan.json"
-  rm -f "$tmpdir/.seraf/plans/test.plan.json"
+  cp "$tmpdir/.local81/plans/test.plan.json" "$tmpdir/.local81/plans/20260430T010101Z-old.plan.json"
+  cp "$tmpdir/.local81/plans/test.plan.json" "$tmpdir/.local81/plans/20260501T020202Z-new.plan.json"
+  rm -f "$tmpdir/.local81/plans/test.plan.json"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --latest --scope web --max-parallel 1 >"$tmpdir/out.txt"
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy --latest --scope web --max-parallel 1 >"$tmpdir/out.txt"
   )
 
-  grep -q '.seraf/plans/20260501T020202Z-new.plan.json' "$tmpdir/out.txt"
+  grep -q '.local81/plans/20260501T020202Z-new.plan.json' "$tmpdir/out.txt"
 }
 
 assert_zero_step_scope_updates_state() {
@@ -365,7 +365,7 @@ assert_zero_step_scope_updates_state() {
   trap 'rm -rf "$tmpdir"' RETURN
   make_workspace "$tmpdir"
 
-  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+  python3 - <<'PY' "$tmpdir/.local81/plans/test.plan.json"
 import json,sys
 path=sys.argv[1]
 with open(path) as f:
@@ -375,14 +375,14 @@ with open(path,"w") as f:
     json.dump(plan,f,separators=(",",":"))
 PY
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web >"$tmpdir/out.txt"
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy --plan "$tmpdir/.local81/plans/test.plan.json" --scope web >"$tmpdir/out.txt"
   )
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
-  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json" "$tmpdir/.seraf/state/web.json"
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | sort | tail -n1)"
+  python3 - <<'PY' "$tmpdir/.local81/runs/$run_dir/run.json" "$tmpdir/.local81/state/web.json"
 import json,sys
 run=json.load(open(sys.argv[1]))
 assert run["rc"] == 0
@@ -401,7 +401,7 @@ test_dry_run_sys_to_qa_file_pull_with_sudo() {
   trap 'rm -rf "$tmpdir"' RETURN
   make_workspace "$tmpdir"
 
-  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+  python3 - <<'PY' "$tmpdir/.local81/plans/test.plan.json"
 import json,sys
 path=sys.argv[1]
 with open(path, encoding="utf-8") as f:
@@ -420,11 +420,11 @@ PY
 
   (
     cd "$tmpdir"
-    "$repo_root/bin/seraf" deploy --plan "$tmpdir/.seraf/plans/test.plan.json" --scope web --dry-run >"$tmpdir/out.txt"
+    "$repo_root/bin/local81" deploy --plan "$tmpdir/.local81/plans/test.plan.json" --scope web --dry-run >"$tmpdir/out.txt"
   )
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
-  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | sort | tail -n1)"
+  python3 - <<'PY' "$tmpdir/.local81/runs/$run_dir/run.json"
 import json,sys
 run=json.load(open(sys.argv[1]))
 assert run["rc"] == 0, run

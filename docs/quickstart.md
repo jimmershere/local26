@@ -1,6 +1,6 @@
-# Seraf quickstart
+# Local-81 quickstart
 
-Get a working Seraf project up in under 10 minutes.
+Get a working Local-81 project up in under 10 minutes.
 
 ## 1. Enter the project
 ```bash
@@ -9,7 +9,7 @@ cd /path/to/your/project
 
 ## 2. Run guided setup
 ```bash
-seraf init --guided
+local81 init --guided
 ```
 Answer the prompts for:
 - project name
@@ -19,43 +19,43 @@ Answer the prompts for:
 - servers
 - safety defaults
 
-Seraf writes `.seraf/config.ini`, mirrors it to `.seraf/config.yaml`, and creates the local state folders for you.
+Local-81 writes `.local81/config.ini`, mirrors it to `.local81/config.yaml`, and creates the local state folders for you.
 
 ## 3. Check the environment
 ```bash
-seraf doctor
+local81 doctor
 ```
 If doctor reports warnings, read them before your first live deploy.
 
 ## 4. Build a plan
 ```bash
-seraf plan --summary
+local81 plan --summary
 ```
-This shows what Seraf found and how many deploy steps it intends to run.
+This shows what Local-81 found and how many deploy steps it intends to run.
 
 ## 5. Run a safe first deploy
 For a bounded first pass, start with dry run mode:
 ```bash
-seraf deploy --plan .seraf/plans/<plan-id>.plan.json --dry-run --scope main
+local81 deploy --plan .local81/plans/<plan-id>.plan.json --dry-run --scope main
 ```
 Then run the live deploy when the plan looks right:
 ```bash
-seraf deploy --plan .seraf/plans/<plan-id>.plan.json --scope main --fail-fast
+local81 deploy --plan .local81/plans/<plan-id>.plan.json --scope main --fail-fast
 ```
 
 ## 6. Check status
 ```bash
-seraf status
+local81 status
 ```
 
 ## 7. Useful follow-up commands
 Once the first plan/deploy path makes sense, these are the next commands worth learning:
 
 ```bash
-seraf history --limit 5
-seraf logs <run-id>
-seraf pull --scope main --dry-run
-seraf diag --hosts app01 --dry-run
+local81 history --limit 5
+local81 logs <run-id>
+local81 pull --scope main --dry-run
+local81 diag --hosts app01 --dry-run
 ```
 
 ## Good first habits
@@ -66,5 +66,5 @@ seraf diag --hosts app01 --dry-run
 
 ## If you get stuck
 Start with:
-- `seraf doctor`
+- `local81 doctor`
 - `docs/troubleshooting.md`

@@ -1,7 +1,7 @@
-# Example legacy settings.cfg for `seraf init --import`
+# Example legacy settings.cfg for `local81 init --import`
 
 log_hosts=app01,app02
-log_dest_dir=.seraf/pulled-logs
+log_dest_dir=.local81/pulled-logs
 jboss_log_path=/opt/jboss/standalone/log/*.log
 apache_log_path=/var/log/httpd/*log
 engin_log_path=/opt/engin/logs/*.log

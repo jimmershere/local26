@@ -3,14 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from seraf.commands.logs import render_run_log, run_logs, _find_run
+from local81.commands.logs import render_run_log, run_logs, _find_run
 
 
 def _make_run(runs_dir: Path, run_id: str, *, rc: int = 0) -> None:
     run_dir = runs_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     data = {
-        "schema": "seraf.run.v0.1",
+        "schema": "local81.run.v0.1",
         "run_id": run_id,
         "plan_id": "plan-1",
         "started_at": "2026-04-01T10:00:00Z",
@@ -70,7 +70,7 @@ def test_render_run_log_shows_details(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     _make_run(runs_dir, "20260401T100000Z-deploy")
     out = render_run_log("20260401T100000Z-deploy", runs_dir=str(runs_dir))
-    assert "Seraf run log" in out
+    assert "Local-81 run log" in out
     assert "Run ID:" in out
     assert "20260401T100000Z-deploy" in out
     assert "PASS" in out
@@ -114,10 +114,10 @@ def test_render_run_log_with_hosts(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_run_logs(tmp_path: Path, monkeypatch, capsys) -> None:
-    runs_dir = tmp_path / ".seraf" / "runs"
+    runs_dir = tmp_path / ".local81" / "runs"
     _make_run(runs_dir, "20260401T100000Z-deploy")
     monkeypatch.chdir(tmp_path)
     rc = run_logs("20260401T100000Z-deploy")
     out = capsys.readouterr().out
     assert rc == 0
-    assert "Seraf run log" in out
+    assert "Local-81 run log" in out

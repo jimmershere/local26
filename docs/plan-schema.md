@@ -1,13 +1,13 @@
-# SERAF Plan Schema v0.1
+# LOCAL-81 Plan Schema v0.1
 
 ## Top-level required keys
 
 ```json
 {
-  "seraf_version": "0.1",
+  "local81_version": "0.1",
   "kind": "plan",
   "mode": "deploy",
-  "schema": "seraf.plan.v0.1",
+  "schema": "local81.plan.v0.1",
   "plan_id": "20260101T000000Z-abc123",
   "created_at": "2026-01-01T00:00:00Z",
   "config_fingerprint": "sha256:<hex>",
