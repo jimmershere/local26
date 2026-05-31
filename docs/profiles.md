@@ -1,32 +1,32 @@
-# Seraf profiles
+# Local-26 profiles
 
-Profiles let you override base `.seraf/config.ini` settings per environment.
+Profiles let you override base `.local26/config.ini` settings per environment.
 
 ## Use a profile
 
 ```bash
-seraf --profile prod deploy --plan .seraf/plans/latest.plan.json
-seraf --profile staging doctor
+local26 --profile prod deploy --plan .local26/plans/latest.plan.json
+local26 --profile staging doctor
 ```
 
-Seraf loads `.seraf/profiles/<name>.yaml` and merges it over the base config.
+Local-26 loads `.local26/profiles/<name>.yaml` and merges it over the base config.
 
 ## List profiles
 
 ```bash
-seraf profiles
+local26 profiles
 ```
 
 ## Create a profile
 
 ```bash
-seraf profile create prod
+local26 profile create prod
 ```
 
 ## Profile format
 
 ```yaml
-seraf:
+local26:
   profile: prod
 defaults:
   rsync_opts: -aP
@@ -42,4 +42,4 @@ scopes:
 
 - Top-level maps merge with the base config.
 - `scopes` entries merge by scope name.
-- Profile validation is included in `seraf doctor`.
+- Profile validation is included in `local26 doctor`.

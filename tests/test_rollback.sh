@@ -14,12 +14,12 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 make_workspace() {
   local dir="$1"
-  mkdir -p "$dir/.seraf/state" "$dir/.seraf/plans" "$dir/.seraf/runs" "$dir/stubs"
-  cat > "$dir/.seraf/config.ini" <<'CFG'
-[seraf]
+  mkdir -p "$dir/.local26/state" "$dir/.local26/plans" "$dir/.local26/runs" "$dir/stubs"
+  cat > "$dir/.local26/config.ini" <<'CFG'
+[local26]
 version = 0.1
 CFG
-  sha256sum "$dir/.seraf/config.ini" | awk '{print $1}'
+  sha256sum "$dir/.local26/config.ini" | awk '{print $1}'
 }
 
 make_base_plan() {
@@ -28,10 +28,10 @@ make_base_plan() {
 import json, sys
 path, fp = sys.argv[1:]
 plan = {
-  "schema": "seraf.plan.v0.1",
+  "schema": "local26.plan.v0.1",
   "kind": "plan",
   "mode": "deploy",
-  "seraf_version": "0.1",
+  "local26_version": "0.1",
   "plan_id": "p-rollback",
   "created_at": "2024-01-01T00:00:00Z",
   "config_fingerprint": f"sha256:{fp}",
@@ -58,11 +58,11 @@ test_rollback_runs_on_failure() {
 
   local fp
   fp="$(make_workspace "$tmpdir")"
-  make_base_plan "$tmpdir/.seraf/plans/test.plan.json" "$fp"
+  make_base_plan "$tmpdir/.local26/plans/test.plan.json" "$fp"
 
   local rb_log="$tmpdir/rollback_calls.txt"
 
-  python3 - <<PY "$tmpdir/.seraf/plans/test.plan.json" "$rb_log"
+  python3 - <<PY "$tmpdir/.local26/plans/test.plan.json" "$rb_log"
 import json, sys
 path, rb_log = sys.argv[1:]
 plan_data = json.load(open(path))
@@ -90,16 +90,16 @@ PY
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync-stub\n' >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'rsync-stub\n' >> "${LOCAL26_STUB_LOG:-/dev/null}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
   local deploy_rc=0
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy \
-      --plan "$tmpdir/.seraf/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
+      --plan "$tmpdir/.local26/plans/test.plan.json" \
       --scope web --max-parallel 1 --rollback-on-failure \
       >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   ) || deploy_rc=$?
@@ -117,8 +117,8 @@ RSYNC
   }
 
   # run.json should record the failure
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
-  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
+  run_dir="$(ls -1 "$tmpdir/.local26/runs" | sort | tail -n1)"
+  python3 - <<'PY' "$tmpdir/.local26/runs/$run_dir/run.json"
 import json, sys
 run = json.load(open(sys.argv[1]))
 assert run["rc"] != 0
@@ -137,11 +137,11 @@ test_no_rollback_without_flag() {
 
   local fp
   fp="$(make_workspace "$tmpdir")"
-  make_base_plan "$tmpdir/.seraf/plans/test.plan.json" "$fp"
+  make_base_plan "$tmpdir/.local26/plans/test.plan.json" "$fp"
 
   local rb_log="$tmpdir/rollback_calls.txt"
 
-  python3 - <<PY "$tmpdir/.seraf/plans/test.plan.json" "$rb_log"
+  python3 - <<PY "$tmpdir/.local26/plans/test.plan.json" "$rb_log"
 import json, sys
 path, rb_log = sys.argv[1:]
 plan_data = json.load(open(path))
@@ -163,16 +163,16 @@ PY
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync-stub\n' >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'rsync-stub\n' >> "${LOCAL26_STUB_LOG:-/dev/null}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
   local deploy_rc=0
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy \
-      --plan "$tmpdir/.seraf/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
+      --plan "$tmpdir/.local26/plans/test.plan.json" \
       --scope web --max-parallel 1 \
       >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   ) || deploy_rc=$?
@@ -191,11 +191,11 @@ test_per_step_on_failure_hook() {
 
   local fp
   fp="$(make_workspace "$tmpdir")"
-  make_base_plan "$tmpdir/.seraf/plans/test.plan.json" "$fp"
+  make_base_plan "$tmpdir/.local26/plans/test.plan.json" "$fp"
 
   local hook_log="$tmpdir/hook_calls.txt"
 
-  python3 - <<PY "$tmpdir/.seraf/plans/test.plan.json" "$hook_log"
+  python3 - <<PY "$tmpdir/.local26/plans/test.plan.json" "$hook_log"
 import json, sys
 path, hook_log = sys.argv[1:]
 plan_data = json.load(open(path))
@@ -218,16 +218,16 @@ PY
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync-stub\n' >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'rsync-stub\n' >> "${LOCAL26_STUB_LOG:-/dev/null}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
   local deploy_rc=0
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy \
-      --plan "$tmpdir/.seraf/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
+      --plan "$tmpdir/.local26/plans/test.plan.json" \
       --scope web --max-parallel 1 \
       >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   ) || deploy_rc=$?
@@ -247,11 +247,11 @@ test_global_on_failure_hook() {
 
   local fp
   fp="$(make_workspace "$tmpdir")"
-  make_base_plan "$tmpdir/.seraf/plans/test.plan.json" "$fp"
+  make_base_plan "$tmpdir/.local26/plans/test.plan.json" "$fp"
 
   local global_log="$tmpdir/global_hook.txt"
 
-  python3 - <<PY "$tmpdir/.seraf/plans/test.plan.json" "$global_log"
+  python3 - <<PY "$tmpdir/.local26/plans/test.plan.json" "$global_log"
 import json, sys
 path, global_log = sys.argv[1:]
 plan_data = json.load(open(path))
@@ -268,16 +268,16 @@ PY
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync-stub\n' >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'rsync-stub\n' >> "${LOCAL26_STUB_LOG:-/dev/null}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
   local deploy_rc=0
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy \
-      --plan "$tmpdir/.seraf/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
+      --plan "$tmpdir/.local26/plans/test.plan.json" \
       --scope web --max-parallel 1 \
       >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   ) || deploy_rc=$?
@@ -297,11 +297,11 @@ test_on_failure_not_fired_on_success() {
 
   local fp
   fp="$(make_workspace "$tmpdir")"
-  make_base_plan "$tmpdir/.seraf/plans/test.plan.json" "$fp"
+  make_base_plan "$tmpdir/.local26/plans/test.plan.json" "$fp"
 
   local hook_log="$tmpdir/hook.txt"
 
-  python3 - <<PY "$tmpdir/.seraf/plans/test.plan.json" "$hook_log"
+  python3 - <<PY "$tmpdir/.local26/plans/test.plan.json" "$hook_log"
 import json, sys
 path, hook_log = sys.argv[1:]
 plan_data = json.load(open(path))
@@ -320,15 +320,15 @@ PY
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync-stub\n' >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'rsync-stub\n' >> "${LOCAL26_STUB_LOG:-/dev/null}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy \
-      --plan "$tmpdir/.seraf/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
+      --plan "$tmpdir/.local26/plans/test.plan.json" \
       --scope web --max-parallel 1 \
       >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   )

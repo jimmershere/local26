@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RPM_DIR="${ROOT_DIR}/packaging/rpm"
 TOPDIR="${RPM_DIR}/.rpmbuild"
-SPEC="${RPM_DIR}/seraf.spec"
+SPEC="${RPM_DIR}/local26.spec"
 VERSION="$(ROOT_DIR="${ROOT_DIR}" python3 - <<'PY'
 from pathlib import Path
 import os
@@ -14,8 +14,8 @@ m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
 print(m.group(1))
 PY
 )"
-TARBALL="seraf-${VERSION}.tar.gz"
-SRCROOT="${TOPDIR}/SOURCES/seraf-${VERSION}"
+TARBALL="local26-${VERSION}.tar.gz"
+SRCROOT="${TOPDIR}/SOURCES/local26-${VERSION}"
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -44,7 +44,7 @@ rsync -a \
 
 (
   cd "${TOPDIR}/SOURCES"
-  tar czf "${TARBALL}" "seraf-${VERSION}"
+  tar czf "${TARBALL}" "local26-${VERSION}"
 )
 
 cp "${SPEC}" "${TOPDIR}/SPECS/"
@@ -52,7 +52,7 @@ cp "${SPEC}" "${TOPDIR}/SPECS/"
 echo "==> Building RPM in ${TOPDIR}"
 rpmbuild \
   --define "_topdir ${TOPDIR}" \
-  -ba "${TOPDIR}/SPECS/seraf.spec"
+  -ba "${TOPDIR}/SPECS/local26.spec"
 
 echo
 echo "Artifacts:"

@@ -4,7 +4,7 @@ This walkthrough assumes a simple Phase 1 setup with one scope named `main`.
 
 ## 1. Initialize the project
 ```bash
-seraf init --guided
+local26 init --guided
 ```
 Suggested first answers:
 - scope: `main`
@@ -16,13 +16,13 @@ That gives you a cautious first rollout.
 
 ## 2. Run doctor
 ```bash
-seraf doctor
+local26 doctor
 ```
 You want a clean result or only minor warnings before the first live deploy.
 
 ## 3. Generate the plan summary
 ```bash
-seraf plan --summary
+local26 plan --summary
 ```
 Look for:
 - the correct scope name
@@ -33,28 +33,28 @@ Look for:
 ## 4. Find the plan file
 If you need the full plan path:
 ```bash
-ls -1 .seraf/plans/*.plan.json | tail -n1
+ls -1 .local26/plans/*.plan.json | tail -n1
 ```
 
 ## 5. Run a dry run first
 ```bash
-seraf deploy --plan .seraf/plans/<plan-id>.plan.json --scope main --dry-run
+local26 deploy --plan .local26/plans/<plan-id>.plan.json --scope main --dry-run
 ```
 This records a run without executing remote commands.
 
 ## 6. Run the live deploy
 ```bash
-seraf deploy --plan .seraf/plans/<plan-id>.plan.json --scope main --fail-fast
+local26 deploy --plan .local26/plans/<plan-id>.plan.json --scope main --fail-fast
 ```
 What to expect:
-- Seraf shows the selected plan and scope
+- Local-26 shows the selected plan and scope
 - each step is announced as it runs
 - failures are called out clearly
-- a run record is written under `.seraf/runs/<run-id>/run.json`
+- a run record is written under `.local26/runs/<run-id>/run.json`
 
 ## 7. Confirm the outcome
 ```bash
-seraf status
+local26 status
 ```
 If the deploy succeeded, you should see the latest run ID and result.
 
@@ -66,7 +66,7 @@ If the deploy succeeded, you should see the latest run ID and result.
 5. rerun deploy
 
 ## Useful files after the first deploy
-- `.seraf/config.ini`
-- `.seraf/plans/*.plan.json`
-- `.seraf/runs/*/run.json`
-- `.seraf/state/*.json`
+- `.local26/config.ini`
+- `.local26/plans/*.plan.json`
+- `.local26/runs/*/run.json`
+- `.local26/state/*.json`

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from seraf.commands.pull import _format_pull_command, run_pull
+from local26.commands.pull import _format_pull_command, run_pull
 
 
-CONFIG_TEMPLATE = """[seraf]
+CONFIG_TEMPLATE = """[local26]
 version = 0.1
 project = test
 
@@ -33,8 +33,8 @@ servers = disabled1
 
 
 def _write_config(tmp_path: Path) -> None:
-    (tmp_path / ".seraf").mkdir(parents=True, exist_ok=True)
-    (tmp_path / ".seraf" / "config.ini").write_text(
+    (tmp_path / ".local26").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".local26" / "config.ini").write_text(
         CONFIG_TEMPLATE.format(
             app_source=tmp_path / "src" / "app",
             api_source=tmp_path / "src" / "api",
@@ -75,22 +75,21 @@ def test_run_pull_uses_subprocess_for_real_run(tmp_path: Path, monkeypatch, caps
     class Result:
         returncode = 0
 
-    def fake_run(command: str, *, shell: bool, text: bool):
+    def fake_run(command: list[str], *, text: bool):
         calls.append(command)
-        assert shell is True
         assert text is True
         return Result()
 
-    monkeypatch.setattr("seraf.commands.pull.subprocess.run", fake_run)
+    monkeypatch.setattr("local26.commands.pull.subprocess.run", fake_run)
 
     rc = run_pull()
 
     out = capsys.readouterr().out
     assert rc == 0
     assert len(calls) == 3
-    assert calls[0] == f"rsync -az -- old1:/srv/app/ {tmp_path / 'src' / 'app'}/"
-    assert calls[1] == f"rsync -az -- old2:/srv/app/ {tmp_path / 'src' / 'app'}/"
-    assert calls[2] == f"rsync -az -- api1:/srv/api/ {tmp_path / 'src' / 'api'}/"
+    assert calls[0] == ["rsync", "-az", "--", "old1:/srv/app/", f"{tmp_path / 'src' / 'app'}/"]
+    assert calls[1] == ["rsync", "-az", "--", "old2:/srv/app/", f"{tmp_path / 'src' / 'app'}/"]
+    assert calls[2] == ["rsync", "-az", "--", "api1:/srv/api/", f"{tmp_path / 'src' / 'api'}/"]
     assert '[pull] scope=app host=old1 ok' in out
     assert 'Pulled files into local source dirs (success=3, failed=0)' in out
 
@@ -101,9 +100,9 @@ def test_run_pull_missing_scope_fails(tmp_path: Path, monkeypatch, capsys) -> No
 
     rc = run_pull(scope="nope")
 
-    out = capsys.readouterr().out
+    err = capsys.readouterr().err
     assert rc == 1
-    assert 'seraf: no matching scopes found' in out
+    assert 'local26: no matching scopes found' in err
 
 
 def test_run_pull_skips_disabled_scope(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -119,7 +118,7 @@ def test_run_pull_skips_disabled_scope(tmp_path: Path, monkeypatch, capsys) -> N
 
 
 def test_cli_pull_command() -> None:
-    from seraf.cli import build_parser
+    from local26.cli import build_parser
 
     parser = build_parser()
     args = parser.parse_args(["pull", "--scope", "app", "--hosts", "m2a,m2b", "--rsync-opts", "-az --delete", "--dry-run"])

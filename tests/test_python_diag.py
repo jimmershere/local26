@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from seraf.commands.diag import diag_remote_command_for_type, resolve_diag_hosts_for_project, run_diag
+from local26.commands.diag import diag_remote_command_for_type, resolve_diag_hosts_for_project, run_diag
 
 
 def test_diag_remote_command_for_type_variants() -> None:
@@ -63,7 +63,7 @@ def test_run_diag_invokes_ssh(tmp_path: Path, monkeypatch, capsys) -> None:
         assert text is True
         return Result()
 
-    monkeypatch.setattr("seraf.commands.diag.subprocess.run", fake_run)
+    monkeypatch.setattr("local26.commands.diag.subprocess.run", fake_run)
 
     rc = run_diag(project="m2-project", hosts="cmsap1", pid="4242", out_dir=str(out_dir))
 
@@ -82,7 +82,7 @@ def test_run_diag_requires_pid_without_remote_cmd(capsys) -> None:
 
 
 def test_cli_diag_command() -> None:
-    from seraf.cli import build_parser
+    from local26.cli import build_parser
 
     parser = build_parser()
     args = parser.parse_args([

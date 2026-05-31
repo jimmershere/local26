@@ -1,8 +1,20 @@
-# Seraf
+# Local-26
+![Local-26 faux union seal](docs/assets/local26-logo.svg)
 
-Seraf is a Python-based deployment and runbook control plane for file sync, plan generation, deploy execution, diagnostics, and operator workflows.
+**Operators’ Local-26 — plan, deploy, audit, hold the line.**
 
-Feedback, issues, and borrowed workflow ideas are welcome — especially if they help make Seraf simpler, tougher, and easier for another operator to trust.
+Local-26 is a lean, operator-readable deployment and runbook control plane for file sync, plan generation, deploy execution, diagnostics, and security-conscious operator workflows.
+
+Feedback, issues, and borrowed workflow ideas are welcome — especially if they help make Local-26 simpler, tougher, and easier for another operator to trust.
+
+## Requirements
+
+- Python 3.12 or newer
+- bash
+- ssh
+- rsync
+- find
+- sha256sum
 
 ## Quick start
 
@@ -11,29 +23,45 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -e .[dev]
-seraf --help
+local26 --help
 ```
 
 ## Common commands
 
 ```bash
-seraf init --guided
-seraf doctor
-seraf plan --summary
-seraf deploy --plan .seraf/plans/<plan>.plan.json --check --dry-run
-seraf history --limit 5
-seraf logs <run-id>
-seraf pull --scope main --dry-run
-seraf diag --hosts app01 --dry-run
-seraf status
+local26 init --guided
+local26 doctor
+local26 compliance report
+local26 plan --summary
+local26 deploy --plan .local26/plans/<plan>.plan.json --check --dry-run
+local26 history --limit 5
+local26 logs <run-id>
+local26 pull --scope main --dry-run
+local26 diag --hosts app01 --dry-run
+local26 status
 ```
 
-Guided setup writes both `.seraf/config.ini` for the current runtime and `.seraf/config.yaml` as a human-readable mirror.
+Guided setup writes both `.local26/config.ini` for the current runtime and `.local26/config.yaml` as a human-readable mirror.
+
+## Verify a fresh clone
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -e .[dev]
+make test
+make python-test
+make quality
+```
+
+`make test` runs Python compile checks and the deterministic baseline shell regression suite. `make python-test` runs the Python pytest suite when development dependencies are installed. `make quality` runs compile, lint, format, pytest, and repository security gates. `make full-shell-test` runs every shell test, including advanced behavior tests that may be refined in later hardening phases.
 
 ## Repo layout
 
-- `src/seraf`, Python implementation
-- `bin/seraf`, shell compatibility wrapper
+- `src/local26`, Python implementation
+- `bin/local26`, source-tree launcher
+- `bin/seraf`, deprecated compatibility wrapper for the old command name
 - `docs/`, operator docs
 - `packaging/rpm/`, first RPM packaging scaffold
 
@@ -46,7 +74,7 @@ Start here if another tech needs to pick it up quickly:
 - `docs/commands.md`
 - `docs/troubleshooting.md`
 - `docs/guided-setup.md`
-- `docs/when-to-use-seraf.md`
+- `docs/when-to-use-local26.md`
 - `examples/legacy-settings.cfg.example`
 - `examples/profile-prod.yaml`
 - `CONTRIBUTING.md`
@@ -58,5 +86,5 @@ A first RHEL-style packaging scaffold lives under `packaging/rpm/`.
 See:
 
 - `packaging/rpm/README.md`
-- `packaging/rpm/seraf.spec`
+- `packaging/rpm/local26.spec`
 - `packaging/rpm/build-rpm.sh`

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOCAL26_HOME="/opt/local26"
+LOCAL26_VENV="${LOCAL26_HOME}/venv"
+LOCAL26_APP="${LOCAL26_HOME}/app"
+
+export LOCAL26_HOME
+export LOCAL26_CONFIG_DIR="${LOCAL26_CONFIG_DIR:-/etc/local26}"
+export LOCAL26_STATE_DIR="${LOCAL26_STATE_DIR:-/var/lib/local26}"
+
+cd "${PWD}"
+exec "${LOCAL26_VENV}/bin/python" -m local26.cli "$@"
