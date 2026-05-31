@@ -451,8 +451,8 @@ plan["scopes"][0]["steps"]=[
     {
       "id":"scope:web:0001",
       "type":"rsync",
-      "host":"a70lqpalm2ex001",
-      "cmd":"ssh \"a70lspalm2ex001\" \"sudo cat /app/sxfrbridge3/file1\" | ssh \"a70lqpalm2ex001\" \"sudo tee /app/sxfrbridge3/file1 >/dev/null\""
+      "host":"qa-app01",
+      "cmd":"ssh \"sys-app01\" \"sudo cat /app/sxfrbridge3/file1\" | ssh \"qa-app01\" \"sudo tee /app/sxfrbridge3/file1 >/dev/null\""
     }
 ]
 with open(path,"w",encoding="utf-8") as f:
@@ -472,7 +472,7 @@ assert run["rc"] == 0, run
 assert run["dry_run"] is True, run
 assert len(run["steps"]) == 1, run
 step=run["steps"][0]
-assert step["cmd"] == 'ssh "a70lspalm2ex001" "sudo cat /app/sxfrbridge3/file1" | ssh "a70lqpalm2ex001" "sudo tee /app/sxfrbridge3/file1 >/dev/null"', step
+assert step["cmd"] == 'ssh "sys-app01" "sudo cat /app/sxfrbridge3/file1" | ssh "qa-app01" "sudo tee /app/sxfrbridge3/file1 >/dev/null"', step
 assert step["rc"] == 0, step
 PY
 }

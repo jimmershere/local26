@@ -32,8 +32,6 @@ def _load_plan(path: Path) -> dict:
 def _resolve_plan_path(*, plan: str | None = None, use_latest: bool = False, plans_dir: str = ".local26/plans") -> Path | None:
     if use_latest:
         candidates = sorted(Path(plans_dir).glob("*.plan.json"))
-        if not candidates and plans_dir == ".local26/plans":
-            candidates = sorted(Path(".seraf/plans").glob("*.plan.json"))
         return candidates[-1] if candidates else None
     if plan:
         return Path(plan)
@@ -212,6 +210,113 @@ def _maybe_notify(notifications: list[str], config: dict, *, quiet: bool, force:
         return
     notifications.extend(notify_all(config, event))
 
+def _run_step(scope_name: str, step: dict, *, dry_run: bool, step_timeout: int | None,
+              plan_data: dict, host_label: str | None = None,
+              notifications_config: dict | None = None,
+              notifications_log: list[str] | None = None,
+              quiet: bool = False, force_notify: bool = False,
+              run_id: str = "") -> dict:
+    target_host = _step_host(step, host_label)
+    step_record: dict = {
+        "scope": scope_name,
+        "id": step["id"],
+        "type": step.get("type"),
+        "host": target_host,
+        "cmd": step.get("cmd"),
+    }
+    started = _now_iso()
+    started_monotonic = monotonic()
+    timeout_seconds = step.get("timeout")
+    if timeout_seconds is None:
+        timeout_seconds = step_timeout
+    if step.get("type") == "remote_cmd" and target_host:
+        step_rc, stdout, stderr, timed_out = _run_remote(target_host, step["cmd"], timeout_seconds=timeout_seconds, dry_run=dry_run)
+    else:
+        step_rc, stdout, stderr, timed_out = _run_shell(step["cmd"], timeout_seconds=timeout_seconds, dry_run=dry_run)
+    finished = _now_iso()
+    duration = monotonic() - started_monotonic
+    step_record.update({"rc": step_rc, "started_at": started, "finished_at": finished, "stdout": stdout, "stderr": stderr, "duration_seconds": duration})
+    if timed_out and notifications_config is not None and notifications_log is not None:
+        _maybe_notify(notifications_log, notifications_config, quiet=quiet, force=True, event=NotificationEvent(
+            host=target_host or "local",
+            status="warning",
+            duration_seconds=duration,
+            errors=[stderr or "step timed out", f"step={step['id']}", f"scope={scope_name}"],
+            run_id=run_id,
+            plan_id=plan_data.get("plan_id"),
+            scope=scope_name,
+            kind="timeout-alert",
+        ))
+    return step_record
+
+
+def _write_rollback_record(run_dir: Path | None, record: dict) -> None:
+    if run_dir is None:
+        return
+    rollback_log = run_dir / "rollback.log"
+    with rollback_log.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+    rollback_log.chmod(0o600)
+
+
+def _run_rollbacks(successful_with_rollback: list[dict], *, dry_run: bool,
+                   run_dir: Path | None, printer=print) -> None:
+    for prev in reversed(successful_with_rollback):
+        rollback = prev.get("rollback") or {}
+        if not rollback.get("cmd"):
+            continue
+        started = _now_iso()
+        rollback_rc, rollback_stdout, rollback_stderr, _timed_out = _run_shell(rollback["cmd"], dry_run=dry_run)
+        finished = _now_iso()
+        _write_rollback_record(run_dir, {
+            "step_id": prev.get("id"),
+            "rollback_type": rollback.get("type"),
+            "cmd": rollback.get("cmd"),
+            "rc": rollback_rc,
+            "started_at": started,
+            "finished_at": finished,
+            "stdout": rollback_stdout,
+            "stderr": rollback_stderr,
+        })
+        if rollback_rc != 0:
+            printer(f"  !! Rollback failed with rc={rollback_rc}: {prev.get('id')}")
+            if rollback_stderr:
+                printer(f"     {rollback_stderr}")
+
+
+def _record_skipped_step(scope_name: str, step: dict, host_label: str | None) -> dict:
+    return {
+        "scope": scope_name,
+        "id": step["id"],
+        "type": step.get("type"),
+        "host": _step_host(step, host_label),
+        "cmd": step.get("cmd"),
+        "rc": -1,
+        "started_at": _now_iso(),
+        "finished_at": _now_iso(),
+        "stdout": "",
+        "stderr": "skipped after earlier failure",
+    }
+
+
+def _handle_step_failure(step: dict, step_record: dict, *, successful_with_rollback: list[dict],
+                         dry_run: bool, rollback_on_failure: bool, plan_data: dict,
+                         run_dir: Path | None, printer=print) -> int:
+    step_rc = step_record["rc"]
+    stderr = step_record.get("stderr", "")
+    printer(f"  !! Step failed with rc={step_rc}: {step['id']}")
+    if stderr:
+        printer(f"     {stderr}")
+    on_failure = step.get("on_failure") or {}
+    if on_failure.get("cmd"):
+        _run_shell(on_failure["cmd"], dry_run=dry_run)
+    if rollback_on_failure:
+        _run_rollbacks(successful_with_rollback, dry_run=dry_run, run_dir=run_dir, printer=printer)
+    global_failure = plan_data.get("on_failure") or {}
+    if global_failure.get("cmd"):
+        _run_shell(global_failure["cmd"], dry_run=dry_run)
+    return step_rc or 1
+
 
 def _deploy_scope_steps(scope_obj: dict, *, dry_run: bool, step_timeout: int | None,
                         fail_fast: bool, rollback_on_failure: bool, plan_data: dict,
@@ -219,7 +324,8 @@ def _deploy_scope_steps(scope_obj: dict, *, dry_run: bool, step_timeout: int | N
                         notifications_config: dict | None = None,
                         notifications_log: list[str] | None = None,
                         quiet: bool = False, force_notify: bool = False,
-                        run_id: str = "") -> tuple[list[dict], int, int]:
+                        run_id: str = "", run_dir: Path | None = None,
+                        max_parallel: int = 1) -> tuple[list[dict], int, int]:
     scope_name = scope_obj.get("scope", "unknown")
     steps_out: list[dict] = []
     successful_with_rollback: list[dict] = []
@@ -231,70 +337,108 @@ def _deploy_scope_steps(scope_obj: dict, *, dry_run: bool, step_timeout: int | N
         display += f" -> {host_label}"
     printer(display)
     printer(f"  Steps queued: {len(scope_obj.get('steps', []))}")
-    for index, step in enumerate(scope_obj.get("steps", [])):
-        target_host = _step_host(step, host_label)
-        step_record: dict = {
-            "scope": scope_name,
-            "id": step["id"],
-            "type": step.get("type"),
-            "host": target_host,
-            "cmd": step.get("cmd"),
-        }
+    steps = scope_obj.get("steps", [])
+    index = 0
+    while index < len(steps):
         if failure_seen and fail_fast:
-            step_record.update({"rc": -1, "started_at": _now_iso(), "finished_at": _now_iso(), "stdout": "", "stderr": "skipped after earlier failure"})
-            steps_out.append(step_record)
+            steps_out.append(_record_skipped_step(scope_name, steps[index], host_label))
+            index += 1
             continue
+        step = steps[index]
+        if step.get("parallel") and max_parallel > 1:
+            parallel_batch: list[tuple[int, dict]] = []
+            while index < len(steps) and steps[index].get("parallel"):
+                parallel_step = steps[index]
+                printer(f"  -> {parallel_step['id']} [{parallel_step.get('type', 'step')}] on {_step_host(parallel_step, host_label) or 'n/a'}")
+                parallel_batch.append((index, parallel_step))
+                index += 1
+            batch_results: dict[int, dict] = {}
+            workers = min(max_parallel, len(parallel_batch))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {
+                    executor.submit(
+                        _run_step,
+                        scope_name,
+                        parallel_step,
+                        dry_run=dry_run,
+                        step_timeout=step_timeout,
+                        plan_data=plan_data,
+                        host_label=host_label,
+                        notifications_config=notifications_config,
+                        notifications_log=notifications_log,
+                        quiet=quiet,
+                        force_notify=force_notify,
+                        run_id=run_id,
+                    ): batch_index
+                    for batch_index, parallel_step in parallel_batch
+                }
+                for future in as_completed(futures):
+                    batch_results[futures[future]] = future.result()
+            for batch_index, parallel_step in parallel_batch:
+                step_record = batch_results[batch_index]
+                steps_out.append(step_record)
+                if step_record["rc"] == 0:
+                    if parallel_step.get("type") == "rsync":
+                        deployed_files += 1
+                    if parallel_step.get("rollback") and parallel_step["rollback"].get("cmd"):
+                        successful_with_rollback.append(parallel_step)
+                    continue
+                if not failure_seen:
+                    rc = _handle_step_failure(
+                        parallel_step,
+                        step_record,
+                        successful_with_rollback=successful_with_rollback,
+                        dry_run=dry_run,
+                        rollback_on_failure=rollback_on_failure,
+                        plan_data=plan_data,
+                        run_dir=run_dir,
+                        printer=printer,
+                    )
+                failure_seen = True
+            if failure_seen and fail_fast:
+                for remaining in steps[index:]:
+                    steps_out.append(_record_skipped_step(scope_name, remaining, host_label))
+                break
+            continue
+        target_host = _step_host(step, host_label)
         printer(f"  -> {step['id']} [{step.get('type', 'step')}] on {target_host or 'n/a'}")
-        started = _now_iso()
-        started_monotonic = monotonic()
-        timeout_seconds = step.get("timeout")
-        if timeout_seconds is None:
-            timeout_seconds = step_timeout
-        if step.get("type") == "remote_cmd" and target_host:
-            step_rc, stdout, stderr, timed_out = _run_remote(target_host, step["cmd"], timeout_seconds=timeout_seconds, dry_run=dry_run)
-        else:
-            step_rc, stdout, stderr, timed_out = _run_shell(step["cmd"], timeout_seconds=timeout_seconds, dry_run=dry_run)
-        finished = _now_iso()
-        duration = monotonic() - started_monotonic
-        step_record.update({"rc": step_rc, "started_at": started, "finished_at": finished, "stdout": stdout, "stderr": stderr, "duration_seconds": duration})
+        step_record = _run_step(
+            scope_name,
+            step,
+            dry_run=dry_run,
+            step_timeout=step_timeout,
+            plan_data=plan_data,
+            host_label=host_label,
+            notifications_config=notifications_config,
+            notifications_log=notifications_log,
+            quiet=quiet,
+            force_notify=force_notify,
+            run_id=run_id,
+        )
         steps_out.append(step_record)
-        if timed_out and notifications_config is not None and notifications_log is not None:
-            _maybe_notify(notifications_log, notifications_config, quiet=quiet, force=True, event=NotificationEvent(
-                host=target_host or "local",
-                status="warning",
-                duration_seconds=duration,
-                errors=[stderr or "step timed out", f"step={step['id']}", f"scope={scope_name}"],
-                run_id=run_id,
-                plan_id=plan_data.get("plan_id"),
-                scope=scope_name,
-                kind="timeout-alert",
-            ))
-        if step_rc == 0:
+        if step_record["rc"] == 0:
             if step.get("type") == "rsync":
                 deployed_files += 1
             if step.get("rollback") and step["rollback"].get("cmd"):
                 successful_with_rollback.append(step)
+            index += 1
             continue
         failure_seen = True
-        rc = step_rc or 1
-        printer(f"  !! Step failed with rc={step_rc}: {step['id']}")
-        if stderr:
-            printer(f"     {stderr}")
-        on_failure = step.get("on_failure") or {}
-        if on_failure.get("cmd"):
-            _run_shell(on_failure["cmd"], dry_run=dry_run)
-        if rollback_on_failure:
-            for prev in reversed(successful_with_rollback):
-                rollback = prev.get("rollback") or {}
-                if rollback.get("cmd"):
-                    _run_shell(rollback["cmd"], dry_run=dry_run)
-        global_failure = plan_data.get("on_failure") or {}
-        if global_failure.get("cmd"):
-            _run_shell(global_failure["cmd"], dry_run=dry_run)
+        rc = _handle_step_failure(
+            step,
+            step_record,
+            successful_with_rollback=successful_with_rollback,
+            dry_run=dry_run,
+            rollback_on_failure=rollback_on_failure,
+            plan_data=plan_data,
+            run_dir=run_dir,
+            printer=printer,
+        )
         if fail_fast:
-            for remaining in scope_obj.get("steps", [])[index + 1:]:
-                steps_out.append({"scope": scope_name, "id": remaining["id"], "type": remaining.get("type"), "host": _step_host(remaining, host_label), "cmd": remaining.get("cmd"), "rc": -1, "started_at": _now_iso(), "finished_at": _now_iso(), "stdout": "", "stderr": "skipped after earlier failure"})
+            for remaining in steps[index + 1:]:
+                steps_out.append(_record_skipped_step(scope_name, remaining, host_label))
             break
+        index += 1
     return steps_out, rc, deployed_files
 
 
@@ -312,7 +456,8 @@ def _deploy_host_group(host: str, steps: list[dict], *, dry_run: bool,
                        step_timeout: int | None, fail_fast: bool,
                        rollback_on_failure: bool, plan_data: dict,
                        notifications_config: dict | None, notifications_log: list[str],
-                       quiet: bool, force_notify: bool, run_id: str) -> dict:
+                       quiet: bool, force_notify: bool, run_id: str,
+                       run_dir: Path | None, max_parallel: int) -> dict:
     scope_obj = {"scope": steps[0].get("_scope", "unknown"), "steps": steps}
     steps_out, rc, deployed_files = _deploy_scope_steps(
         scope_obj, dry_run=dry_run, step_timeout=step_timeout,
@@ -320,6 +465,7 @@ def _deploy_host_group(host: str, steps: list[dict], *, dry_run: bool,
         plan_data=plan_data, host_label=host, printer=_safe_print,
         notifications_config=notifications_config, notifications_log=notifications_log,
         quiet=quiet, force_notify=force_notify, run_id=run_id,
+        run_dir=run_dir, max_parallel=max_parallel,
     )
     return {"host": host, "rc": rc, "deployed_files": deployed_files, "steps": steps_out}
 
@@ -422,7 +568,7 @@ def run_deploy(*, plan: str | None = None, use_latest: bool = False, scope: str 
         if parallel and len(filtered_groups) > 1:
             workers = max_parallel if max_parallel > 1 else len(filtered_groups)
             with ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = {executor.submit(_deploy_host_group, host_key, host_steps, dry_run=dry_run, step_timeout=step_timeout, fail_fast=fail_fast, rollback_on_failure=rollback_on_failure, plan_data=plan_data, notifications_config=notifications_cfg, notifications_log=notification_warnings, quiet=quiet, force_notify=notify, run_id=run_id): host_key for host_key, host_steps in filtered_groups.items()}
+                futures = {executor.submit(_deploy_host_group, host_key, host_steps, dry_run=dry_run, step_timeout=step_timeout, fail_fast=fail_fast, rollback_on_failure=rollback_on_failure, plan_data=plan_data, notifications_config=notifications_cfg, notifications_log=notification_warnings, quiet=quiet, force_notify=notify, run_id=run_id, run_dir=run_dir, max_parallel=max_parallel): host_key for host_key, host_steps in filtered_groups.items()}
                 for future in as_completed(futures):
                     result = future.result()
                     all_steps.extend(result["steps"])
@@ -433,7 +579,7 @@ def run_deploy(*, plan: str | None = None, use_latest: bool = False, scope: str 
                             break
         else:
             for host_key, host_steps in filtered_groups.items():
-                result = _deploy_host_group(host_key, host_steps, dry_run=dry_run, step_timeout=step_timeout, fail_fast=fail_fast, rollback_on_failure=rollback_on_failure, plan_data=plan_data, notifications_config=notifications_cfg, notifications_log=notification_warnings, quiet=quiet, force_notify=notify, run_id=run_id)
+                result = _deploy_host_group(host_key, host_steps, dry_run=dry_run, step_timeout=step_timeout, fail_fast=fail_fast, rollback_on_failure=rollback_on_failure, plan_data=plan_data, notifications_config=notifications_cfg, notifications_log=notification_warnings, quiet=quiet, force_notify=notify, run_id=run_id, run_dir=run_dir, max_parallel=max_parallel)
                 all_steps.extend(result["steps"])
                 host_results.append({"host": result["host"], "rc": result["rc"], "deployed_files": result["deployed_files"]})
                 if result["rc"] != 0:
@@ -451,7 +597,7 @@ def run_deploy(*, plan: str | None = None, use_latest: bool = False, scope: str 
     else:
         for scope_obj in scopes:
             scope_name = scope_obj.get("scope", "unknown")
-            steps_out, rc, deployed_files = _deploy_scope_steps(scope_obj, dry_run=dry_run, step_timeout=step_timeout, fail_fast=fail_fast, rollback_on_failure=rollback_on_failure, plan_data=plan_data, notifications_config=notifications_cfg, notifications_log=notification_warnings, quiet=quiet, force_notify=notify, run_id=run_id)
+            steps_out, rc, deployed_files = _deploy_scope_steps(scope_obj, dry_run=dry_run, step_timeout=step_timeout, fail_fast=fail_fast, rollback_on_failure=rollback_on_failure, plan_data=plan_data, notifications_config=notifications_cfg, notifications_log=notification_warnings, quiet=quiet, force_notify=notify, run_id=run_id, run_dir=run_dir, max_parallel=max_parallel)
             all_steps.extend(steps_out)
             if dry_run or rc == 0:
                 _update_scope_state(scope_name, plan_id=plan_data.get("plan_id"), run_id=run_id, rc=rc, deployed_files=deployed_files)

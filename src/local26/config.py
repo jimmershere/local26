@@ -13,8 +13,6 @@ from .profiles import load_profile_data, merge_profile
 
 DEFAULT_CONFIG_PATH = Path(".local26/config.ini")
 ALT_CONFIG_PATHS = (Path(".local26/config.yaml"), Path(".local26/config.yml"))
-LEGACY_CONFIG_PATH = Path(".seraf/config.ini")
-LEGACY_ALT_CONFIG_PATHS = (Path(".seraf/config.yaml"), Path(".seraf/config.yml"))
 _SCOPE_SECTION_RE = re.compile(r'^scope "([^"]+)"$')
 
 
@@ -55,11 +53,6 @@ def resolve_config_path(path: str | Path = DEFAULT_CONFIG_PATH) -> Path:
         for alt in ALT_CONFIG_PATHS:
             if alt.is_file():
                 return alt
-        if LEGACY_CONFIG_PATH.is_file():
-            return LEGACY_CONFIG_PATH
-        for alt in LEGACY_ALT_CONFIG_PATHS:
-            if alt.is_file():
-                return alt
     raise FileNotFoundError(candidate)
 
 
@@ -71,20 +64,6 @@ def _get_bool(parser: configparser.ConfigParser, section: str, option: str, fall
 
 _INI_ALLOWED_KEYS = {
     "local26": {
-        "version",
-        "project",
-        "default_scope",
-        "state_dir",
-        "plans_dir",
-        "runs_dir",
-        "logs_dir",
-        "lock_file",
-        "require_plan_for_deploy",
-        "fail_fast",
-        "max_parallel",
-        "shell",
-    },
-    "seraf": {
         "version",
         "project",
         "default_scope",
@@ -212,8 +191,6 @@ _SCOPE_REQUIRED_KEYS = {"enabled", "source_dir", "target_dir", "servers", "disco
 _BOOLEAN_KEYS = {
     ("local26", "require_plan_for_deploy"),
     ("local26", "fail_fast"),
-    ("seraf", "require_plan_for_deploy"),
-    ("seraf", "fail_fast"),
     ("defaults", "backup"),
     ("defaults", "remote_mkdir"),
     ("defaults", "dry_run_default"),
@@ -289,11 +266,9 @@ def _validate_ini_config(path: Path) -> list[ConfigValidationFinding]:
         return [_validation_finding("FAIL", f"could not read {path}: {exc}")]
 
     sections = parser.sections()
-    core_section = "local26" if parser.has_section("local26") else "seraf" if parser.has_section("seraf") else None
+    core_section = "local26" if parser.has_section("local26") else None
     if core_section is None:
         findings.append(_validation_finding("FAIL", "missing required [local26] section"))
-    elif core_section == "seraf":
-        findings.append(_validation_finding("WARN", "legacy [seraf] section is accepted but should be migrated to [local26]"))
 
     scopes: list[str] = []
     for section in sections:
@@ -381,10 +356,10 @@ def _validate_yaml_config(path: Path) -> list[ConfigValidationFinding]:
     except OSError as exc:
         return [_validation_finding("FAIL", f"could not read {path}: {exc}")]
     data = _expect_mapping(data, "top-level config", findings)
-    allowed_top = {"local26", "seraf", "tools", "defaults", "routing", "access", "notifications", "scopes"}
+    allowed_top = {"local26", "tools", "defaults", "routing", "access", "notifications", "scopes"}
     for key in sorted(set(data) - allowed_top):
         findings.append(_validation_finding("FAIL", f"unknown top-level key {key!r}"))
-    core = _expect_mapping(data.get("local26") or data.get("seraf"), "local26", findings)
+    core = _expect_mapping(data.get("local26"), "local26", findings)
     if not core:
         findings.append(_validation_finding("FAIL", "missing required local26 mapping"))
     elif core.get("version") != "0.1":
@@ -415,7 +390,7 @@ def validate_config(path: str | Path = DEFAULT_CONFIG_PATH) -> list[ConfigValida
 def _scope_name(section: str, parser: configparser.ConfigParser) -> str | None:
     if section.startswith('scope "') and section.endswith('"'):
         return section[len('scope "'):-1]
-    if section in {"local26", "seraf", "defaults", "routing", "tools", "notifications", "notification.telegram", "notification.email"}:
+    if section in {"local26", "defaults", "routing", "tools", "notifications", "notification.telegram", "notification.email"}:
         return None
     required_like_scope = {"source_dir", "target_dir", "servers"}
     if required_like_scope.issubset(set(parser.options(section))):
@@ -444,7 +419,7 @@ def _base_dict_from_ini(path: Path) -> dict[str, Any]:
         }
     return {
         "local26": {
-            "project": parser.get("local26", "project", fallback=parser.get("seraf", "project", fallback=path.parent.parent.name)),
+            "project": parser.get("local26", "project", fallback=path.parent.parent.name),
         },
         "defaults": {
             "rsync_opts": parser.get("defaults", "rsync_opts", fallback="-az"),
@@ -486,7 +461,7 @@ def _base_dict_from_yaml(path: Path) -> dict[str, Any]:
     scopes = data.get("scopes") or {}
     return {
         "local26": {
-            "project": (data.get("local26") or data.get("seraf") or {}).get("project", path.parent.parent.name),
+            "project": (data.get("local26") or {}).get("project", path.parent.parent.name),
         },
         "defaults": {
             "rsync_opts": defaults.get("rsync_opts", "-az"),

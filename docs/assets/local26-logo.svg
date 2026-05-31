@@ -16,12 +16,12 @@
   <circle class="ring" cx="360" cy="360" r="318"/>
   <circle class="field" cx="360" cy="360" r="278"/>
   <circle class="paper" cx="360" cy="360" r="226"/>
-  <path class="gold-line" d="M210 360h92m116 0h92"/>
-  <path class="line" d="M250 442l106-164 114 164"/>
-  <path class="line" d="M296 442h128"/>
-  <path class="line" d="M244 272l92 92"/>
+  <path class="gold-line" d="M 210 360h92m 116 0h92"/>
+  <path class="line" d="M 250 442l106-164 114 164"/>
+  <path class="line" d="M 296 442h128"/>
+  <path class="line" d="M 244 272l92 92"/>
   <path class="line" d="M476 272l-92 92"/>
-  <path class="line" d="M238 270h56"/>
+  <path class="line" d="M 238 270h56"/>
   <path class="line" d="M482 270h-56"/>
   <text class="ink" x="360" y="130" font-size="58" text-anchor="middle">LOCAL-26</text>
   <text class="small" x="360" y="610" font-size="30" text-anchor="middle">PLAN • DEPLOY • AUDIT</text>

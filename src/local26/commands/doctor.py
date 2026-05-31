@@ -8,7 +8,7 @@ from pathlib import Path
 from local26.config import load_config, validate_config
 from local26.hooks import list_hooks
 from local26.policy import compliance_findings
-from local26.profiles import list_profiles
+from local26.profiles import list_profiles, load_profile_data
 
 
 @dataclass(slots=True)
@@ -68,13 +68,24 @@ def _config_checks(profile: str | None) -> list[CheckResult]:
     validation_results = validate_config()
     for finding in validation_results:
         results.append(CheckResult(finding.level, finding.name, finding.detail))
+    profile_checked = False
+    if profile:
+        try:
+            load_profile_data(profile)
+            results.append(CheckResult("PASS", "config:profile", profile))
+        except FileNotFoundError as exc:
+            results.append(CheckResult("FAIL", "config:profile", f"missing profile: {exc}"))
+        except Exception as exc:
+            results.append(CheckResult("FAIL", "config:profile", str(exc)))
+        profile_checked = True
     if any(finding.level == "FAIL" for finding in validation_results):
         return results
     try:
         cfg = load_config(profile=profile)
         results.append(CheckResult("PASS", "config:load", f"project={cfg.project}"))
         results.append(CheckResult("PASS" if cfg.scopes else "WARN", "config:scopes", f"count={len(cfg.scopes)}"))
-        results.append(CheckResult("PASS", "config:profile", profile or "base"))
+        if not profile_checked:
+            results.append(CheckResult("PASS", "config:profile", profile or "base"))
     except FileNotFoundError as exc:
         results.append(CheckResult("WARN", "config:load", f"missing config: {exc}"))
         return results

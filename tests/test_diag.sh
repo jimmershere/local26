@@ -21,7 +21,7 @@ export LOCAL26_STUB_LOG="$tmpdir/ssh.log"
 
 out_dir="$tmpdir/diag-out"
 PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" diag \
-  --project m2-project \
+  --project local26-project \
   --hosts cmsap1,cmspr1 \
   --diag-type strace \
   --pid 4242 \

@@ -13,13 +13,13 @@ def test_diag_remote_command_for_type_variants() -> None:
 
 
 def test_resolve_diag_hosts_for_project_aliases() -> None:
-    hosts = resolve_diag_hosts_for_project("m2-project", "cmsap1,cmspr1")
+    hosts = resolve_diag_hosts_for_project("local26-project", "cmsap1,cmspr1")
     assert hosts == "10.242.225.11,10.242.209.11"
 
 
 def test_resolve_diag_hosts_for_project_rejects_disabled_host() -> None:
     try:
-        resolve_diag_hosts_for_project("m2-project", "cmppr1")
+        resolve_diag_hosts_for_project("local26-project", "cmppr1")
     except ValueError as exc:
         assert "unknown or disabled host token" in str(exc)
     else:
@@ -65,7 +65,7 @@ def test_run_diag_invokes_ssh(tmp_path: Path, monkeypatch, capsys) -> None:
 
     monkeypatch.setattr("local26.commands.diag.subprocess.run", fake_run)
 
-    rc = run_diag(project="m2-project", hosts="cmsap1", pid="4242", out_dir=str(out_dir))
+    rc = run_diag(project="local26-project", hosts="cmsap1", pid="4242", out_dir=str(out_dir))
 
     out = capsys.readouterr().out
     assert rc == 0
@@ -87,7 +87,7 @@ def test_cli_diag_command() -> None:
     parser = build_parser()
     args = parser.parse_args([
         "diag",
-        "--project", "m2-project",
+        "--project", "local26-project",
         "--hosts", "cmsap1,cmspr1",
         "--diag-type", "strace",
         "--pid", "4242",
@@ -98,7 +98,7 @@ def test_cli_diag_command() -> None:
         "--dry-run",
     ])
     assert args.command == "diag"
-    assert args.project == "m2-project"
+    assert args.project == "local26-project"
     assert args.hosts == "cmsap1,cmspr1"
     assert args.diag_type == "strace"
     assert args.pid == "4242"

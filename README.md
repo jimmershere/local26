@@ -61,7 +61,6 @@ make quality
 
 - `src/local26`, Python implementation
 - `bin/local26`, source-tree launcher
-- `bin/seraf`, deprecated compatibility wrapper for the old command name
 - `docs/`, operator docs
 - `packaging/rpm/`, first RPM packaging scaffold
 

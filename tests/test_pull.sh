@@ -29,11 +29,11 @@ CFG
 
   (
     cd "$tmpdir"
-    "$repo_root/bin/local26" pull --scope app --hosts "m2a,m2b" --dry-run >"$tmpdir/out.txt"
+    "$repo_root/bin/local26" pull --scope app --hosts "hosta,hostb" --dry-run >"$tmpdir/out.txt"
   )
 
-  grep -q '\[pull\] dry-run scope=app host=m2a cmd=rsync -az -- m2a:/srv/app/ '${tmpdir}'/src/app/' "$tmpdir/out.txt"
-  grep -q '\[pull\] dry-run scope=app host=m2b cmd=rsync -az -- m2b:/srv/app/ '${tmpdir}'/src/app/' "$tmpdir/out.txt"
+  grep -q '\[pull\] dry-run scope=app host=hosta cmd=rsync -az -- hosta:/srv/app/ '${tmpdir}'/src/app/' "$tmpdir/out.txt"
+  grep -q '\[pull\] dry-run scope=app host=hostb cmd=rsync -az -- hostb:/srv/app/ '${tmpdir}'/src/app/' "$tmpdir/out.txt"
   grep -q 'Pulled files into local source dirs (success=2, failed=0)' "$tmpdir/out.txt"
 }
 
@@ -51,7 +51,7 @@ version = 0.1
 enabled = true
 source_dir = ${tmpdir}/src/app
 target_dir = /srv/app
-servers = m2host
+servers = edgehost
 CFG
 
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
@@ -67,7 +67,7 @@ RSYNC
     PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" pull >"$tmpdir/out.txt"
   )
 
-  grep -q 'm2host:/srv/app/' "$tmpdir/rsync.log"
+  grep -q 'edgehost:/srv/app/' "$tmpdir/rsync.log"
   grep -q "${tmpdir}/src/app/" "$tmpdir/rsync.log"
   grep -q 'Pulled files into local source dirs (success=1, failed=0)' "$tmpdir/out.txt"
 }
