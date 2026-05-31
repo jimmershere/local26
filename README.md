@@ -7,6 +7,15 @@ Local-26 is a lean, operator-readable deployment and runbook control plane for f
 
 Feedback, issues, and borrowed workflow ideas are welcome — especially if they help make Local-26 simpler, tougher, and easier for another operator to trust.
 
+## Requirements
+
+- Python 3.12 or newer
+- bash
+- ssh
+- rsync
+- find
+- sha256sum
+
 ## Quick start
 
 ```bash
@@ -33,6 +42,20 @@ local26 status
 ```
 
 Guided setup writes both `.local26/config.ini` for the current runtime and `.local26/config.yaml` as a human-readable mirror.
+
+## Verify a fresh clone
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -e .[dev]
+make test
+make python-test
+make quality
+```
+
+`make test` runs Python compile checks and the deterministic baseline shell regression suite. `make python-test` runs the Python pytest suite when development dependencies are installed. `make quality` runs compile, lint, format, pytest, and repository security gates. `make full-shell-test` runs every shell test, including advanced behavior tests that may be refined in later hardening phases.
 
 ## Repo layout
 
