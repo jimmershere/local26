@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug or broken behavior in Seraf
+about: Report a bug or broken behavior in Local-26
 title: "[bug] "
 labels: [bug]
 assignees: []

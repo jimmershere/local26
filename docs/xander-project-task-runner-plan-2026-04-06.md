@@ -12,19 +12,19 @@ This is intentionally **not** a fake full agent protocol.
 It is a thin execution contract for real project work.
 
 Primary first customer:
-- **Seraf** at `/app/giles/seraf`
+- **Local-26** at `/app/giles/local26`
 
 ---
 
-## Why this should exist outside Seraf command logic
+## Why this should exist outside Local-26 command logic
 
-Seraf is the **project being worked on**.
+Local-26 is the **project being worked on**.
 Xander Task Runner is the **execution substrate** for bounded project work.
 
 That separation keeps things cleaner:
-- Seraf remains a target repo and product
+- Local-26 remains a target repo and product
 - Xander runner handles intake, validation, queueing, execution, and summaries
-- later, Seraf can emit `project_task` jobs if useful
+- later, Local-26 can emit `project_task` jobs if useful
 
 ---
 
@@ -223,13 +223,13 @@ Why sequential first:
 - simpler failure model
 - easier summaries
 - avoids Xander going feral with overlapping tasks
-- matches current desired Seraf chain
+- matches current desired Local-26 chain
 
 ---
 
-## Interaction with Seraf
+## Interaction with Local-26
 
-Initial use case is the four-job Seraf phase-1 chain:
+Initial use case is the four-job Local-26 phase-1 chain:
 
 1. scaffold
 2. runner / models / paths

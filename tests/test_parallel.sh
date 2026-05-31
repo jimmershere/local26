@@ -13,13 +13,13 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 make_workspace() {
   local dir="$1"
-  mkdir -p "$dir/.seraf/state" "$dir/.seraf/plans" "$dir/.seraf/runs" "$dir/stubs"
-  cat > "$dir/.seraf/config.ini" <<'CFG'
-[seraf]
+  mkdir -p "$dir/.local26/state" "$dir/.local26/plans" "$dir/.local26/runs" "$dir/stubs"
+  cat > "$dir/.local26/config.ini" <<'CFG'
+[local26]
 version = 0.1
 CFG
   local fp
-  fp="$(sha256sum "$dir/.seraf/config.ini" | awk '{print $1}')"
+  fp="$(sha256sum "$dir/.local26/config.ini" | awk '{print $1}')"
   printf '%s' "$fp"
 }
 
@@ -29,10 +29,10 @@ make_plan() {
 import json, sys
 path, fp = sys.argv[1:]
 plan = {
-  "schema": "seraf.plan.v0.1",
+  "schema": "local26.plan.v0.1",
   "kind": "plan",
   "mode": "deploy",
-  "seraf_version": "0.1",
+  "local26_version": "0.1",
   "plan_id": "p-par",
   "created_at": "2024-01-01T00:00:00Z",
   "config_fingerprint": f"sha256:{fp}",
@@ -60,11 +60,11 @@ test_parallel_flag_concurrent() {
 
   local fp
   fp="$(make_workspace "$tmpdir")"
-  make_plan "$tmpdir/.seraf/plans/test.plan.json" "$fp"
+  make_plan "$tmpdir/.local26/plans/test.plan.json" "$fp"
 
   # Overwrite plan with 5 rsync steps each taking 0.3s; with parallel:true and
   # max-parallel 5 the whole run should finish in ~0.3s not 1.5s.
-  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+  python3 - <<'PY' "$tmpdir/.local26/plans/test.plan.json"
 import json, sys
 path = sys.argv[1]
 with open(path) as f:
@@ -90,7 +90,7 @@ set -euo pipefail
 # rsync stub: treat last two args as local/remote — run an approximated sleep
 # The cmd is embedded in the plan; the deploy runner calls bash -lc "$cmd"
 # so we don't need to do anything special here.
-printf 'rsync-stub\n' >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'rsync-stub\n' >> "${LOCAL26_STUB_LOG:-/dev/null}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
@@ -98,11 +98,11 @@ RSYNC
   local t0 t1 elapsed
   t0="$(date +%s%N)"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy \
-      --plan "$tmpdir/.seraf/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
+      --plan "$tmpdir/.local26/plans/test.plan.json" \
       --scope web --max-parallel 5 \
       >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   )
@@ -110,8 +110,8 @@ RSYNC
   t1="$(date +%s%N)"
   elapsed=$(( (t1 - t0) / 1000000 ))  # ms
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
-  python3 - <<PY "$tmpdir/.seraf/runs/$run_dir/run.json" "$elapsed"
+  run_dir="$(ls -1 "$tmpdir/.local26/runs" | sort | tail -n1)"
+  python3 - <<PY "$tmpdir/.local26/runs/$run_dir/run.json" "$elapsed"
 import json, sys
 path, elapsed = sys.argv[1], int(sys.argv[2])
 run = json.load(open(path))
@@ -136,9 +136,9 @@ test_parallel_barrier_override() {
 
   local fp
   fp="$(make_workspace "$tmpdir")"
-  make_plan "$tmpdir/.seraf/plans/test.plan.json" "$fp"
+  make_plan "$tmpdir/.local26/plans/test.plan.json" "$fp"
 
-  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+  python3 - <<'PY' "$tmpdir/.local26/plans/test.plan.json"
 import json, sys
 path = sys.argv[1]
 with open(path) as f:
@@ -160,28 +160,28 @@ PY
   cat > "$tmpdir/stubs/ssh" <<'SSH'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'ssh-stub %s\n' "$*" >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'ssh-stub %s\n' "$*" >> "${LOCAL26_STUB_LOG:-/dev/null}"
 SSH
   chmod +x "$tmpdir/stubs/ssh"
 
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync-stub %s\n' "$*" >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'rsync-stub %s\n' "$*" >> "${LOCAL26_STUB_LOG:-/dev/null}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy \
-      --plan "$tmpdir/.seraf/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
+      --plan "$tmpdir/.local26/plans/test.plan.json" \
       --scope web --max-parallel 3 \
       >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   )
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
-  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
+  run_dir="$(ls -1 "$tmpdir/.local26/runs" | sort | tail -n1)"
+  python3 - <<'PY' "$tmpdir/.local26/runs/$run_dir/run.json"
 import json, sys
 run = json.load(open(sys.argv[1]))
 assert run["rc"] == 0, f"run failed: rc={run['rc']}, steps={run['steps']}"
@@ -201,9 +201,9 @@ test_parallel_failure_propagates() {
 
   local fp
   fp="$(make_workspace "$tmpdir")"
-  make_plan "$tmpdir/.seraf/plans/test.plan.json" "$fp"
+  make_plan "$tmpdir/.local26/plans/test.plan.json" "$fp"
 
-  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+  python3 - <<'PY' "$tmpdir/.local26/plans/test.plan.json"
 import json, sys
 path = sys.argv[1]
 with open(path) as f:
@@ -223,24 +223,24 @@ PY
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync-stub\n' >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'rsync-stub\n' >> "${LOCAL26_STUB_LOG:-/dev/null}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
   local deploy_rc=0
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy \
-      --plan "$tmpdir/.seraf/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
+      --plan "$tmpdir/.local26/plans/test.plan.json" \
       --scope web --max-parallel 3 --no-fail-fast \
       >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   ) || deploy_rc=$?
 
   [ "$deploy_rc" -ne 0 ] || { echo "expected deploy to fail but rc=0"; return 1; }
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
-  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
+  run_dir="$(ls -1 "$tmpdir/.local26/runs" | sort | tail -n1)"
+  python3 - <<'PY' "$tmpdir/.local26/runs/$run_dir/run.json"
 import json, sys
 run = json.load(open(sys.argv[1]))
 assert run["rc"] != 0, f"expected run-level failure, got rc=0"

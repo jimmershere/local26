@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from seraf.cli import build_parser
-from seraf.commands.diff import diff_plans, run_diff
+from local26.cli import build_parser
+from local26.commands.diff import diff_plans, run_diff
 
 
 def _write_plan(path: Path, data: dict) -> None:
@@ -13,10 +13,10 @@ def _write_plan(path: Path, data: dict) -> None:
 
 def _plan(plan_id: str, *, scopes: list[dict] | None = None, **overrides) -> dict:
     data = {
-        "seraf_version": "0.1",
+        "local26_version": "0.1",
         "kind": "plan",
         "mode": "deploy",
-        "schema": "seraf.plan.v0.1",
+        "schema": "local26.plan.v0.1",
         "plan_id": plan_id,
         "created_at": "2026-04-01T10:00:00Z",
         "config_fingerprint": "sha256:abc123",
@@ -35,7 +35,7 @@ def test_diff_plans_identical(tmp_path: Path) -> None:
 
     out = diff_plans(str(plan_a), str(plan_b))
 
-    assert "Seraf plan diff" in out
+    assert "Local-26 plan diff" in out
     assert "Scope 'api': no changes" in out
 
 
@@ -117,7 +117,7 @@ def test_run_diff_prints_output(tmp_path: Path, capsys) -> None:
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert "Seraf plan diff" in out
+    assert "Local-26 plan diff" in out
 
 
 def test_diff_parser_accepts_plan_paths() -> None:

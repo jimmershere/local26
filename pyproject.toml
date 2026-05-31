@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "seraf"
+name = "local26"
 version = "0.1.0"
-description = "Seraf Python control plane"
+description = "Local-26 Python control plane"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-seraf = "seraf.cli:main"
+local26 = "local26.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

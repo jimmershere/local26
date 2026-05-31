@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from seraf.commands.history import list_runs, render_history, run_history
+from local26.commands.history import list_runs, render_history, run_history
 
 
 def _make_run(runs_dir: Path, run_id: str, *, rc: int = 0, dry_run: bool = False,
@@ -11,7 +11,7 @@ def _make_run(runs_dir: Path, run_id: str, *, rc: int = 0, dry_run: bool = False
     run_dir = runs_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     data = {
-        "schema": "seraf.run.v0.1",
+        "schema": "local26.run.v0.1",
         "run_id": run_id,
         "plan_id": "plan-1",
         "started_at": "2026-04-01T10:00:00Z",
@@ -113,11 +113,11 @@ def test_render_history_shows_runs(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_run_history(tmp_path: Path, monkeypatch, capsys) -> None:
-    runs_dir = tmp_path / ".seraf" / "runs"
+    runs_dir = tmp_path / ".local26" / "runs"
     _make_run(runs_dir, "20260401T100000Z-deploy")
     monkeypatch.chdir(tmp_path)
     rc = run_history()
     out = capsys.readouterr().out
     assert rc == 0
-    assert "Seraf history" in out
+    assert "Local-26 history" in out
     assert "20260401T100000Z-deploy" in out
