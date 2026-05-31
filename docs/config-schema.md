@@ -4,14 +4,19 @@ This document defines the canonical `.local81/config.ini` contract for LOCAL-81 
 
 ## Parsing and validation rules
 
-LOCAL-81 config parsing is intentionally compatibility-oriented in v0.1:
+`local81 doctor` and `local81 deploy --check` run strict schema validation:
 
-- Keys are case-sensitive and should match the documented names.
-- Access-policy booleans must be `true` or `false`; invalid values are reported as blocking policy findings.
-- Paths should be non-empty strings.
-- `scope` names should be non-empty and unique.
-- `servers` should be a comma-separated list with no surrounding spaces per item.
-- Unknown non-scope sections are ignored by the runtime unless a command explicitly documents support for them.
+- Unknown sections are errors.
+- Unknown keys in known sections are errors.
+- Duplicate sections or duplicate keys are errors.
+- Keys are case-sensitive and must match the documented names.
+- Boolean values must be `true` or `false`.
+- Integer values must be valid integers in the documented range.
+- Paths and required strings must not be empty.
+- `default_scope` must match a configured `[scope "NAME"]` section when scopes exist.
+- Scope `discovery` must be `mtime_since_last_success` in v0.1.
+
+The runtime loader remains compatibility-oriented for older configs, but production workflows should treat validator failures as blocking.
 
 ## Canonical structure
 

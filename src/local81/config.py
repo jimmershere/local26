@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import configparser
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,17 @@ DEFAULT_CONFIG_PATH = Path(".local81/config.ini")
 ALT_CONFIG_PATHS = (Path(".local81/config.yaml"), Path(".local81/config.yml"))
 LEGACY_CONFIG_PATH = Path(".seraf/config.ini")
 LEGACY_ALT_CONFIG_PATHS = (Path(".seraf/config.yaml"), Path(".seraf/config.yml"))
+_SCOPE_SECTION_RE = re.compile(r'^scope "([^"]+)"$')
+
+
+@dataclass(slots=True)
+class ConfigValidationFinding:
+    level: str
+    name: str
+    detail: str
+
+    def render(self) -> str:
+        return f"[{self.level}] {self.name}: {self.detail}"
 
 
 @dataclass(slots=True)
@@ -55,6 +67,297 @@ def _get_bool(parser: configparser.ConfigParser, section: str, option: str, fall
     if parser.has_option(section, option):
         return parser.getboolean(section, option)
     return fallback
+
+
+_INI_ALLOWED_KEYS = {
+    "local81": {
+        "version",
+        "project",
+        "default_scope",
+        "state_dir",
+        "plans_dir",
+        "runs_dir",
+        "logs_dir",
+        "lock_file",
+        "require_plan_for_deploy",
+        "fail_fast",
+        "max_parallel",
+        "shell",
+    },
+    "seraf": {
+        "version",
+        "project",
+        "default_scope",
+        "state_dir",
+        "plans_dir",
+        "runs_dir",
+        "logs_dir",
+        "lock_file",
+        "require_plan_for_deploy",
+        "fail_fast",
+        "max_parallel",
+        "shell",
+    },
+    "tools": {"ssh", "rsync", "find", "jq"},
+    "defaults": {
+        "rsync_opts",
+        "backup",
+        "backup_suffix",
+        "remote_mkdir",
+        "dry_run_default",
+        "log_hosts",
+        "log_dest_dir",
+        "jboss_log_path",
+        "apache_log_path",
+        "engin_log_path",
+        "smartxfr_log_path",
+    },
+    "routing": {
+        "env_from_filename_prefix",
+        "env_from_server_name_char_at",
+        "env_from_server_name_char_map",
+    },
+    "access": {
+        "allowed_users",
+        "allowed_groups",
+        "denied_users",
+        "deny_root",
+        "allow_remote_cmd",
+    },
+    "notifications": {"notify_on_success"},
+    "notification.telegram": {"enabled", "bot_token", "chat_id", "api_base"},
+    "notification.email": {"enabled", "to", "sendmail_bin", "subject_prefix"},
+}
+_SCOPE_ALLOWED_KEYS = {
+    "enabled",
+    "source_dir",
+    "target_dir",
+    "servers",
+    "discovery",
+    "rsync_opts",
+    "backup",
+    "backup_suffix",
+}
+_LOCAL81_REQUIRED_KEYS = {
+    "version",
+    "project",
+    "default_scope",
+    "state_dir",
+    "plans_dir",
+    "runs_dir",
+    "logs_dir",
+    "lock_file",
+    "require_plan_for_deploy",
+    "fail_fast",
+    "max_parallel",
+    "shell",
+}
+_TOOLS_REQUIRED_KEYS = {"ssh", "rsync", "find"}
+_DEFAULTS_REQUIRED_KEYS = {
+    "rsync_opts",
+    "backup",
+    "backup_suffix",
+    "remote_mkdir",
+    "dry_run_default",
+    "log_hosts",
+    "log_dest_dir",
+    "jboss_log_path",
+    "apache_log_path",
+    "engin_log_path",
+    "smartxfr_log_path",
+}
+_ROUTING_REQUIRED_KEYS = {
+    "env_from_filename_prefix",
+    "env_from_server_name_char_at",
+    "env_from_server_name_char_map",
+}
+_SCOPE_REQUIRED_KEYS = {"enabled", "source_dir", "target_dir", "servers", "discovery"}
+_BOOLEAN_KEYS = {
+    ("local81", "require_plan_for_deploy"),
+    ("local81", "fail_fast"),
+    ("seraf", "require_plan_for_deploy"),
+    ("seraf", "fail_fast"),
+    ("defaults", "backup"),
+    ("defaults", "remote_mkdir"),
+    ("defaults", "dry_run_default"),
+    ("access", "deny_root"),
+    ("access", "allow_remote_cmd"),
+    ("notifications", "notify_on_success"),
+    ("notification.telegram", "enabled"),
+    ("notification.email", "enabled"),
+}
+_SCOPE_BOOLEAN_KEYS = {"enabled", "backup"}
+
+
+def _validation_finding(level: str, detail: str) -> ConfigValidationFinding:
+    return ConfigValidationFinding(level, "config:schema", detail)
+
+
+def _missing_keys(parser: configparser.ConfigParser, section: str, required: set[str]) -> list[str]:
+    if not parser.has_section(section):
+        return sorted(required)
+    present = set(parser.options(section))
+    return sorted(required - present)
+
+
+def _validate_bool(parser: configparser.ConfigParser, section: str, option: str, findings: list[ConfigValidationFinding]) -> None:
+    if parser.has_section(section) and parser.has_option(section, option):
+        try:
+            parser.getboolean(section, option)
+        except ValueError:
+            findings.append(_validation_finding("FAIL", f"[{section}] {option} must be true or false"))
+
+
+def _validate_int(parser: configparser.ConfigParser, section: str, option: str, *, minimum: int, findings: list[ConfigValidationFinding]) -> None:
+    if not (parser.has_section(section) and parser.has_option(section, option)):
+        return
+    raw = parser.get(section, option)
+    try:
+        value = int(raw)
+    except ValueError:
+        findings.append(_validation_finding("FAIL", f"[{section}] {option} must be an integer"))
+        return
+    if value < minimum:
+        findings.append(_validation_finding("FAIL", f"[{section}] {option} must be >= {minimum}"))
+
+
+def _validate_non_empty(parser: configparser.ConfigParser, section: str, option: str, findings: list[ConfigValidationFinding]) -> None:
+    if parser.has_section(section) and parser.has_option(section, option) and not parser.get(section, option).strip():
+        findings.append(_validation_finding("FAIL", f"[{section}] {option} must not be empty"))
+
+
+def _validate_ini_config(path: Path) -> list[ConfigValidationFinding]:
+    findings: list[ConfigValidationFinding] = []
+    parser = configparser.ConfigParser(interpolation=None, strict=True)
+    parser.optionxform = str
+    try:
+        with path.open(encoding="utf-8") as handle:
+            parser.read_file(handle)
+    except configparser.Error as exc:
+        return [_validation_finding("FAIL", f"could not parse {path}: {exc}")]
+    except OSError as exc:
+        return [_validation_finding("FAIL", f"could not read {path}: {exc}")]
+
+    sections = parser.sections()
+    core_section = "local81" if parser.has_section("local81") else "seraf" if parser.has_section("seraf") else None
+    if core_section is None:
+        findings.append(_validation_finding("FAIL", "missing required [local81] section"))
+    elif core_section == "seraf":
+        findings.append(_validation_finding("WARN", "legacy [seraf] section is accepted but should be migrated to [local81]"))
+
+    scopes: list[str] = []
+    for section in sections:
+        scope_match = _SCOPE_SECTION_RE.match(section)
+        if scope_match:
+            scope_name = scope_match.group(1).strip()
+            scopes.append(scope_name)
+            if not scope_name:
+                findings.append(_validation_finding("FAIL", "scope section name must not be empty"))
+            unknown = sorted(set(parser.options(section)) - _SCOPE_ALLOWED_KEYS)
+            for key in unknown:
+                findings.append(_validation_finding("FAIL", f"unknown key [{section}] {key}"))
+            missing = sorted(_SCOPE_REQUIRED_KEYS - set(parser.options(section)))
+            for key in missing:
+                findings.append(_validation_finding("FAIL", f"missing required key [{section}] {key}"))
+            for key in _SCOPE_BOOLEAN_KEYS:
+                _validate_bool(parser, section, key, findings)
+            _validate_non_empty(parser, section, "source_dir", findings)
+            _validate_non_empty(parser, section, "target_dir", findings)
+            _validate_non_empty(parser, section, "servers", findings)
+            if parser.has_option(section, "discovery") and parser.get(section, "discovery") != "mtime_since_last_success":
+                findings.append(_validation_finding("FAIL", f"[{section}] discovery must be mtime_since_last_success"))
+            continue
+
+        if section not in _INI_ALLOWED_KEYS:
+            findings.append(_validation_finding("FAIL", f"unknown section [{section}]"))
+            continue
+        unknown = sorted(set(parser.options(section)) - _INI_ALLOWED_KEYS[section])
+        for key in unknown:
+            findings.append(_validation_finding("FAIL", f"unknown key [{section}] {key}"))
+
+    if core_section:
+        for key in _missing_keys(parser, core_section, _LOCAL81_REQUIRED_KEYS):
+            findings.append(_validation_finding("FAIL", f"missing required key [{core_section}] {key}"))
+        version = parser.get(core_section, "version", fallback="")
+        if version and version != "0.1":
+            findings.append(_validation_finding("FAIL", f"[{core_section}] version must be 0.1"))
+        for key in ("project", "default_scope", "state_dir", "plans_dir", "runs_dir", "logs_dir", "lock_file", "shell"):
+            _validate_non_empty(parser, core_section, key, findings)
+        for key in ("require_plan_for_deploy", "fail_fast"):
+            _validate_bool(parser, core_section, key, findings)
+        _validate_int(parser, core_section, "max_parallel", minimum=1, findings=findings)
+        default_scope = parser.get(core_section, "default_scope", fallback="").strip()
+        if default_scope and scopes and default_scope not in scopes:
+            findings.append(_validation_finding("FAIL", f"[{core_section}] default_scope {default_scope!r} does not match any scope"))
+
+    for section, required in (("tools", _TOOLS_REQUIRED_KEYS), ("defaults", _DEFAULTS_REQUIRED_KEYS), ("routing", _ROUTING_REQUIRED_KEYS)):
+        if not parser.has_section(section):
+            findings.append(_validation_finding("FAIL", f"missing required [{section}] section"))
+            continue
+        for key in _missing_keys(parser, section, required):
+            findings.append(_validation_finding("FAIL", f"missing required key [{section}] {key}"))
+
+    for section, option in _BOOLEAN_KEYS:
+        _validate_bool(parser, section, option, findings)
+    _validate_int(parser, "routing", "env_from_server_name_char_at", minimum=1, findings=findings)
+
+    if not scopes:
+        findings.append(_validation_finding("WARN", "no [scope \"NAME\"] sections configured"))
+    if not parser.has_section("access"):
+        findings.append(_validation_finding("WARN", "no [access] section configured"))
+
+    if not [finding for finding in findings if finding.level == "FAIL"]:
+        findings.append(ConfigValidationFinding("PASS", "config:schema", f"{path} matches schema"))
+    return findings
+
+
+def _expect_mapping(value: Any, name: str, findings: list[ConfigValidationFinding]) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        findings.append(_validation_finding("FAIL", f"{name} must be a mapping"))
+        return {}
+    return value
+
+
+def _validate_yaml_config(path: Path) -> list[ConfigValidationFinding]:
+    findings: list[ConfigValidationFinding] = []
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        return [_validation_finding("FAIL", f"could not parse {path}: {exc}")]
+    except OSError as exc:
+        return [_validation_finding("FAIL", f"could not read {path}: {exc}")]
+    data = _expect_mapping(data, "top-level config", findings)
+    allowed_top = {"local81", "seraf", "tools", "defaults", "routing", "access", "notifications", "scopes"}
+    for key in sorted(set(data) - allowed_top):
+        findings.append(_validation_finding("FAIL", f"unknown top-level key {key!r}"))
+    core = _expect_mapping(data.get("local81") or data.get("seraf"), "local81", findings)
+    if not core:
+        findings.append(_validation_finding("FAIL", "missing required local81 mapping"))
+    elif core.get("version") != "0.1":
+        findings.append(_validation_finding("FAIL", "local81.version must be 0.1"))
+    scopes = _expect_mapping(data.get("scopes"), "scopes", findings)
+    if not scopes:
+        findings.append(_validation_finding("WARN", "no scopes configured"))
+    default_scope = core.get("default_scope")
+    if default_scope and scopes and default_scope not in scopes:
+        findings.append(_validation_finding("FAIL", f"local81.default_scope {default_scope!r} does not match any scope"))
+    if not data.get("access"):
+        findings.append(_validation_finding("WARN", "no access policy configured"))
+    if not [finding for finding in findings if finding.level == "FAIL"]:
+        findings.append(ConfigValidationFinding("PASS", "config:schema", f"{path} matches schema"))
+    return findings
+
+
+def validate_config(path: str | Path = DEFAULT_CONFIG_PATH) -> list[ConfigValidationFinding]:
+    try:
+        config_path = resolve_config_path(path)
+    except FileNotFoundError as exc:
+        return [ConfigValidationFinding("WARN", "config:schema", f"missing config: {exc}")]
+    if config_path.suffix in {".yaml", ".yml"}:
+        return _validate_yaml_config(config_path)
+    return _validate_ini_config(config_path)
 
 
 def _scope_name(section: str, parser: configparser.ConfigParser) -> str | None:

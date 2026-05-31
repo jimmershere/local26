@@ -94,7 +94,7 @@ Before any steps run, deploy enforces the configured `[access]` policy from `.lo
 | `--step-timeout SECS` | Default timeout per step in seconds |
 | `--rollback-on-failure` | On failure, execute rollback cmds for successful prior steps |
 | `--fail-fast` / `--no-fail-fast` | Override `fail_fast` behavior |
-| `--check` | Validate the plan and execution inputs before running steps |
+| `--check` | Validate the plan, config schema, access policy, and execution inputs before running steps |
 | `--hosts-file PATH` | Restrict execution to hosts listed in a file |
 | `--parallel` | Enable parallel host execution where supported |
 | `--notify` | Emit notification output for wrapped/operator workflows |
@@ -280,6 +280,7 @@ Checks environment health and optionally validates a plan file schema.
 | `plan:schema_ver` | PASS/FAIL | `schema == "local81.plan.v0.1"` |
 | `plan:scopes` | PASS/WARN | scopes list present and non-empty |
 | `plan:steps` | PASS/WARN | total step count across all scopes |
+| `config:schema` | PASS/WARN/FAIL | `.local81/config.ini` schema validation |
 
 **Output format:**
 ```

@@ -89,7 +89,13 @@ def load_access_policy(path: str | Path = DEFAULT_CONFIG_PATH) -> AccessPolicy:
 
     parser = configparser.ConfigParser(interpolation=None)
     parser.optionxform = str
-    parser.read(config_path, encoding="utf-8")
+    try:
+        parser.read(config_path, encoding="utf-8")
+    except configparser.Error as exc:
+        return AccessPolicy(
+            source=config_path,
+            parse_errors=[f"could not parse {config_path}: {exc}"],
+        )
     policy = AccessPolicy(source=config_path, configured=parser.has_section("access"))
     if not parser.has_section("access"):
         return policy
