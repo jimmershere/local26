@@ -5,7 +5,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from local26.config import load_config
+from local26.config import load_config, validate_config
 from local26.hooks import list_hooks
 from local26.policy import compliance_findings
 from local26.profiles import list_profiles
@@ -65,6 +65,11 @@ def _plan_checks(plan_path: Path) -> list[CheckResult]:
 
 def _config_checks(profile: str | None) -> list[CheckResult]:
     results: list[CheckResult] = []
+    validation_results = validate_config()
+    for finding in validation_results:
+        results.append(CheckResult(finding.level, finding.name, finding.detail))
+    if any(finding.level == "FAIL" for finding in validation_results):
+        return results
     try:
         cfg = load_config(profile=profile)
         results.append(CheckResult("PASS", "config:load", f"project={cfg.project}"))

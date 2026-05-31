@@ -10,7 +10,7 @@ from pathlib import Path
 from threading import Lock
 from time import monotonic
 
-from local26.config import load_config, resolve_config_path
+from local26.config import load_config, resolve_config_path, validate_config
 from local26.hooks import run_hook
 from local26.notifications import NotificationEvent, notify_all
 from local26.policy import enforce_deploy_policy
@@ -161,6 +161,11 @@ def run_check(*, plan: str | None = None, use_latest: bool = False, scope: str |
         else:
             warnings.append(f"{tool} not found")
             print(f"[warn] {tool}: not found in PATH")
+    for finding in validate_config():
+        if finding.level == "FAIL":
+            errors.append(finding.render())
+        elif finding.level == "WARN":
+            warnings.append(finding.render())
     print(f"\nScopes: {len(scopes)}")
     print(f"Total steps: {total_steps}\n")
     for err in errors:
