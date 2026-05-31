@@ -51,6 +51,46 @@ denied_users =
 deny_root = false
 allow_remote_cmd = false
 
+[access.providers]
+enabled = ldap,sudo,service_accounts,external
+fail_closed = true
+
+[access.ldap]
+enabled = true
+uri = ldaps://ad.example.com
+bind_dn = CN=local26-reader,OU=Service Accounts,DC=example,DC=com
+bind_password_env = LOCAL26_LDAP_BIND_PASSWORD
+user_base_dn = OU=Users,DC=example,DC=com
+group_base_dn = OU=Groups,DC=example,DC=com
+user_filter = (sAMAccountName={user})
+group_filter = (member={user_dn})
+allowed_groups = Local26-Deployers
+admin_groups = Local26-Admins
+cache_ttl_seconds = 300
+require_tls = true
+fail_closed = true
+
+[access.sudo]
+enabled = true
+require_sudo_user = true
+allowed_sudo_users = deploybot
+preserve_original_user = true
+fail_closed = true
+
+[access.service_accounts]
+enabled = true
+allowed_accounts = local26-ci
+require_interactive_user = false
+allowed_sources = ci,systemd,timer
+fail_closed = true
+
+[access.external]
+enabled = true
+command = /usr/local/bin/local26-policy-check
+timeout_seconds = 5
+input_format = json
+fail_closed = true
+
 [scope "web"]
 enabled = true
 source_dir = /srv/source
@@ -96,6 +136,7 @@ write_plan "$tmpdir/.local26/plans/valid.plan.json"
   "$repo_root/bin/local26" doctor >"$tmpdir/doctor-valid.out"
 )
 grep -q '\[PASS\] config:schema:' "$tmpdir/doctor-valid.out"
+grep -q 'LDAP/AD provider is scaffolded only' "$tmpdir/doctor-valid.out"
 
 (
   cd "$tmpdir"

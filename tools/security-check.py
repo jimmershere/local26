@@ -45,8 +45,8 @@ SECRET_PATTERNS = (
     re.compile(r"\b[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}\b"),
 )
 
-APPROVED_BASH_LC = {
-    ("src/local26/commands/deploy.py", 45),
+APPROVED_BASH_LC_CONTEXTS = {
+    ("src/local26/commands/deploy.py", "_run_shell"),
 }
 
 
@@ -115,6 +115,20 @@ def _is_bash_lc_call(node: ast.Call) -> bool:
     return first_two == ["bash", "-lc"]
 
 
+def _function_context(tree: ast.AST, node: ast.AST) -> str:
+    node_line = getattr(node, "lineno", 0)
+    matches: list[tuple[int, str]] = []
+    for candidate in ast.walk(tree):
+        if isinstance(candidate, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            start = candidate.lineno
+            end = getattr(candidate, "end_lineno", start)
+            if start <= node_line <= end:
+                matches.append((start, candidate.name))
+    if not matches:
+        return "<module>"
+    return sorted(matches)[-1][1]
+
+
 def _python_security_findings(paths: list[str]) -> list[str]:
     findings: list[str] = []
     for rel in paths:
@@ -135,7 +149,7 @@ def _python_security_findings(paths: list[str]) -> list[str]:
                     findings.append(f"{rel}:{node.lineno}: subprocess shell=True is forbidden")
             if call_name in {"os.system", "os.popen"}:
                 findings.append(f"{rel}:{node.lineno}: {call_name} is forbidden")
-            if _is_bash_lc_call(node) and (rel, node.lineno) not in APPROVED_BASH_LC:
+            if _is_bash_lc_call(node) and (rel, _function_context(tree, node)) not in APPROVED_BASH_LC_CONTEXTS:
                 findings.append(f"{rel}:{node.lineno}: new bash -lc execution site must be reviewed and approved")
     return findings
 

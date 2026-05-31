@@ -64,3 +64,9 @@ Each `scopes[]` entry contains:
   }
 }
 ```
+
+## Plan integrity and approval gates
+
+Generated plans include `config_fingerprint`, a `sha256:<64 lowercase hex>` digest of the config file used to build the plan. `local26 deploy --check` treats missing, malformed, or stale fingerprint metadata as warnings so operators can identify plans generated from older config without changing live deploy behavior.
+
+Approval-gate enforcement needs a product decision before it can become blocking deploy behavior. A future approval model should define who can approve a plan, what exact plan/config fingerprint is approved, how approvals expire, and whether emergency deploys can bypass the gate. Until those decisions are made, integrity diagnostics should remain advisory outside `deploy --check` validation.

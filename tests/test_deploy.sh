@@ -93,6 +93,47 @@ assert rsync[0]["stdout"] == "out|pipe", rsync[0]
 assert rsync[0]["stderr"] == "err|pipe", rsync[0]
 PY
 }
+assert_check_reports_execution_safety_diagnostics() {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' RETURN
+  make_workspace "$tmpdir"
+
+  python3 - <<'PY' "$tmpdir/.local26/plans/test.plan.json"
+import json,sys
+path=sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    plan=json.load(f)
+plan["scopes"][0]["steps"]=[
+    {
+      "id":"scope:web:0001",
+      "type":"remote_cmd",
+      "server":"h1",
+      "cmd":"sudo systemctl restart app | tee /tmp/local26-restart.log",
+      "rollback":{"cmd":"sudo systemctl stop app"}
+    }
+]
+plan["on_failure"]={"cmd":"printf failed >&2"}
+with open(path,"w",encoding="utf-8") as f:
+    json.dump(plan,f,separators=(",",":"))
+PY
+
+  (
+    cd "$tmpdir"
+    set +e
+    "$repo_root/bin/local26" deploy --plan "$tmpdir/.local26/plans/test.plan.json" --check >"$tmpdir/check.out"
+    check_rc=$?
+    set -e
+    [ "$check_rc" -ne 0 ]
+  )
+
+  grep -q 'Execution safety diagnostics:' "$tmpdir/check.out"
+  grep -q 'remote_cmd executes through ssh' "$tmpdir/check.out"
+  grep -q 'shell features require review: pipeline |' "$tmpdir/check.out"
+  grep -q 'command references sudo' "$tmpdir/check.out"
+  grep -q 'rollback command will execute' "$tmpdir/check.out"
+  grep -q 'plan-level on_failure command may execute after failure' "$tmpdir/check.out"
+}
 
 test_parallel_race_runjson_integrity() {
   local tmpdir
@@ -442,6 +483,7 @@ assert_deploy_latest_uses_newest_plan
 assert_zero_step_scope_updates_state
 assert_pipe_output_preserved
 test_dry_run_sys_to_qa_file_pull_with_sudo
+assert_check_reports_execution_safety_diagnostics
 test_parallel_race_runjson_integrity
 assert_remote_cmd_barrier_ordering
 

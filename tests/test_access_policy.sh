@@ -19,6 +19,23 @@ allowed_groups =
 denied_users =
 deny_root = false
 allow_remote_cmd = false
+
+[access.providers]
+enabled = ldap,sudo,service_accounts,external
+fail_closed = true
+
+[access.ldap]
+enabled = true
+uri = ldap://ad.example.com
+
+[access.sudo]
+enabled = true
+
+[access.service_accounts]
+enabled = true
+
+[access.external]
+enabled = true
 CFG
 
 cat > "$tmpdir/.local26/plans/policy.plan.json" <<'JSON'
@@ -125,6 +142,11 @@ grep -q 'Local-26 compliance report' "$tmpdir/compliance.out"
 grep -q 'CM-5 privileged functions' "$tmpdir/compliance.out"
 grep -q 'remote command steps are denied by default' "$tmpdir/compliance.out"
 grep -q 'runtime directories and artifacts are owner-only by design' "$tmpdir/compliance.out"
+grep -q 'LDAP/AD provider should use ldaps://' "$tmpdir/compliance.out"
+grep -q 'LDAP/AD provider is scaffolded only' "$tmpdir/compliance.out"
+grep -q 'sudo provider is scaffolded only' "$tmpdir/compliance.out"
+grep -q 'service account provider enabled without allowed_accounts' "$tmpdir/compliance.out"
+grep -q 'external policy provider enabled without command' "$tmpdir/compliance.out"
 
 cp "$tmpdir/.local26/config.ini" "$tmpdir/.local26/config.ini.good"
 python3 - <<'PY' "$tmpdir/.local26/config.ini"
