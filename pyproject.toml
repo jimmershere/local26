@@ -3,18 +3,40 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "seraf"
+name = "local81"
 version = "0.1.0"
-description = "Seraf Python control plane"
+description = "Local-81 Python control plane"
 readme = "README.md"
 requires-python = ">=3.12"
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: System Administrators",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: System :: Systems Administration",
+]
 dependencies = [
   "PyYAML>=6.0",
   "textual>=8.2.5",
 ]
 
 [project.scripts]
-seraf = "seraf.cli:main"
+local81 = "local81.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = [
+  "pytest>=8",
+  "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 160
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E9", "F"]

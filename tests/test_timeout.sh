@@ -9,12 +9,12 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 make_workspace() {
   local dir="$1"
-  mkdir -p "$dir/.seraf/state" "$dir/.seraf/plans" "$dir/.seraf/runs" "$dir/stubs"
-  cat > "$dir/.seraf/config.ini" <<'CFG'
-[seraf]
+  mkdir -p "$dir/.local81/state" "$dir/.local81/plans" "$dir/.local81/runs" "$dir/stubs"
+  cat > "$dir/.local81/config.ini" <<'CFG'
+[local81]
 version = 0.1
 CFG
-  sha256sum "$dir/.seraf/config.ini" | awk '{print $1}'
+  sha256sum "$dir/.local81/config.ini" | awk '{print $1}'
 }
 
 make_base_plan() {
@@ -23,10 +23,10 @@ make_base_plan() {
 import json, sys
 path, fp = sys.argv[1:]
 plan = {
-  "schema": "seraf.plan.v0.1",
+  "schema": "local81.plan.v0.1",
   "kind": "plan",
   "mode": "deploy",
-  "seraf_version": "0.1",
+  "local81_version": "0.1",
   "plan_id": "p-timeout",
   "created_at": "2024-01-01T00:00:00Z",
   "config_fingerprint": f"sha256:{fp}",
@@ -52,9 +52,9 @@ test_step_timeout_kills_step() {
 
   local fp
   fp="$(make_workspace "$tmpdir")"
-  make_base_plan "$tmpdir/.seraf/plans/test.plan.json" "$fp"
+  make_base_plan "$tmpdir/.local81/plans/test.plan.json" "$fp"
 
-  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+  python3 - <<'PY' "$tmpdir/.local81/plans/test.plan.json"
 import json, sys
 path = sys.argv[1]
 with open(path) as f:
@@ -75,19 +75,19 @@ PY
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync-stub\n' >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'rsync-stub\n' >> "${LOCAL81_STUB_LOG:-/dev/null}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   local deploy_rc=0
   local t0 t1 elapsed
   t0="$(date +%s)"
 
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy \
-      --plan "$tmpdir/.seraf/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy \
+      --plan "$tmpdir/.local81/plans/test.plan.json" \
       --scope web --max-parallel 1 \
       >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   ) || deploy_rc=$?
@@ -100,8 +100,8 @@ RSYNC
   # Should have finished in well under 10s (the sleep would have been 30s)
   [ "$elapsed" -lt 10 ] || { echo "timeout did not kill the step fast enough: elapsed=${elapsed}s"; return 1; }
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
-  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | sort | tail -n1)"
+  python3 - <<'PY' "$tmpdir/.local81/runs/$run_dir/run.json"
 import json, sys
 run = json.load(open(sys.argv[1]))
 assert run["rc"] != 0, f"expected run-level failure, got rc=0"
@@ -122,9 +122,9 @@ test_step_timeout_passes_on_success() {
 
   local fp
   fp="$(make_workspace "$tmpdir")"
-  make_base_plan "$tmpdir/.seraf/plans/test.plan.json" "$fp"
+  make_base_plan "$tmpdir/.local81/plans/test.plan.json" "$fp"
 
-  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+  python3 - <<'PY' "$tmpdir/.local81/plans/test.plan.json"
 import json, sys
 path = sys.argv[1]
 with open(path) as f:
@@ -145,21 +145,21 @@ PY
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync-stub\n' >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'rsync-stub\n' >> "${LOCAL81_STUB_LOG:-/dev/null}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy \
-      --plan "$tmpdir/.seraf/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy \
+      --plan "$tmpdir/.local81/plans/test.plan.json" \
       --scope web --max-parallel 1 \
       >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   )
 
-  run_dir="$(ls -1 "$tmpdir/.seraf/runs" | sort | tail -n1)"
-  python3 - <<'PY' "$tmpdir/.seraf/runs/$run_dir/run.json"
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | sort | tail -n1)"
+  python3 - <<'PY' "$tmpdir/.local81/runs/$run_dir/run.json"
 import json, sys
 run = json.load(open(sys.argv[1]))
 assert run["rc"] == 0, f"expected success, got rc={run['rc']}"
@@ -178,11 +178,11 @@ test_cli_step_timeout_global() {
 
   local fp
   fp="$(make_workspace "$tmpdir")"
-  make_base_plan "$tmpdir/.seraf/plans/test.plan.json" "$fp"
+  make_base_plan "$tmpdir/.local81/plans/test.plan.json" "$fp"
 
   # Two steps: step 1 has no per-step timeout, step 2 has a generous per-step timeout.
   # CLI --step-timeout 1 should kill step 1 (sleeps 30s) but not step 2 (echo).
-  python3 - <<'PY' "$tmpdir/.seraf/plans/test.plan.json"
+  python3 - <<'PY' "$tmpdir/.local81/plans/test.plan.json"
 import json, sys
 path = sys.argv[1]
 with open(path) as f:
@@ -203,19 +203,19 @@ PY
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync-stub\n' >> "${SERAF_STUB_LOG:-/dev/null}"
+printf 'rsync-stub\n' >> "${LOCAL81_STUB_LOG:-/dev/null}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export SERAF_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   local deploy_rc=0
   local t0 t1 elapsed
   t0="$(date +%s)"
 
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/seraf" deploy \
-      --plan "$tmpdir/.seraf/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy \
+      --plan "$tmpdir/.local81/plans/test.plan.json" \
       --scope web --max-parallel 1 --step-timeout 1 \
       >"$tmpdir/out.txt" 2>"$tmpdir/err.txt"
   ) || deploy_rc=$?

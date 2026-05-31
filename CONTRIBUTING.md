@@ -1,8 +1,8 @@
-# Contributing to Seraf
+# Contributing to Local-81
 
-Thanks for taking a look at Seraf.
+Thanks for taking a look at Local-81.
 
-Seraf is meant to be practical, operator-friendly, and easy to reason about under pressure. Contributions are welcome when they make the tool simpler, tougher, clearer, or more useful for real deployment work.
+Local-81 is meant to be practical, operator-friendly, and easy to reason about under pressure. Contributions are welcome when they make the tool simpler, tougher, clearer, or more useful for real deployment work.
 
 ## Good contribution types
 - bug fixes
@@ -23,27 +23,31 @@ Seraf is meant to be practical, operator-friendly, and easy to reason about unde
 
 ## Local setup
 ```bash
-cd /path/to/seraf
+cd /path/to/local81
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -e .[dev]
 ```
+Local-81 currently targets Python 3.12 or newer.
 
 ## Verify before proposing changes
 ```bash
-pytest -q
-python -m seraf.cli --help
-python -m seraf.cli doctor --help
-python -m seraf.cli deploy --help
+make test
+make python-test
+make quality
+make full-shell-test
+python -m local81.cli --help
+python -m local81.cli doctor --help
+python -m local81.cli deploy --help
 ```
 
 For workflow additions, also verify the affected command help directly, for example:
 ```bash
-python -m seraf.cli pull --help
-python -m seraf.cli diag --help
-python -m seraf.cli pull-logs --help
-python -m seraf.cli diff --help
+python -m local81.cli pull --help
+python -m local81.cli diag --help
+python -m local81.cli pull-logs --help
+python -m local81.cli diff --help
 ```
 
 ## Docs to keep in sync
@@ -57,7 +61,7 @@ When command behavior changes, review these files together:
 
 ## Examples and fit
 Before adding a feature, read:
-- `docs/when-to-use-seraf.md`
+- `docs/when-to-use-local81.md`
 - `examples/legacy-settings.cfg.example`
 - `examples/profile-prod.yaml`
 

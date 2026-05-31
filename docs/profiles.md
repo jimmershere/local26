@@ -1,32 +1,32 @@
-# Seraf profiles
+# Local-81 profiles
 
-Profiles let you override base `.seraf/config.ini` settings per environment.
+Profiles let you override base `.local81/config.ini` settings per environment.
 
 ## Use a profile
 
 ```bash
-seraf --profile prod deploy --plan .seraf/plans/latest.plan.json
-seraf --profile staging doctor
+local81 --profile prod deploy --plan .local81/plans/latest.plan.json
+local81 --profile staging doctor
 ```
 
-Seraf loads `.seraf/profiles/<name>.yaml` and merges it over the base config.
+Local-81 loads `.local81/profiles/<name>.yaml` and merges it over the base config.
 
 ## List profiles
 
 ```bash
-seraf profiles
+local81 profiles
 ```
 
 ## Create a profile
 
 ```bash
-seraf profile create prod
+local81 profile create prod
 ```
 
 ## Profile format
 
 ```yaml
-seraf:
+local81:
   profile: prod
 defaults:
   rsync_opts: -aP
@@ -42,4 +42,4 @@ scopes:
 
 - Top-level maps merge with the base config.
 - `scopes` entries merge by scope name.
-- Profile validation is included in `seraf doctor`.
+- Profile validation is included in `local81 doctor`.
