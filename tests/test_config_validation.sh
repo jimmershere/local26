@@ -51,6 +51,46 @@ denied_users =
 deny_root = false
 allow_remote_cmd = false
 
+[access.providers]
+enabled = ldap,sudo,service_accounts,external
+fail_closed = true
+
+[access.ldap]
+enabled = true
+uri = ldaps://ad.example.com
+bind_dn = CN=local81-reader,OU=Service Accounts,DC=example,DC=com
+bind_password_env = LOCAL81_LDAP_BIND_PASSWORD
+user_base_dn = OU=Users,DC=example,DC=com
+group_base_dn = OU=Groups,DC=example,DC=com
+user_filter = (sAMAccountName={user})
+group_filter = (member={user_dn})
+allowed_groups = Local81-Deployers
+admin_groups = Local81-Admins
+cache_ttl_seconds = 300
+require_tls = true
+fail_closed = true
+
+[access.sudo]
+enabled = true
+require_sudo_user = true
+allowed_sudo_users = deploybot
+preserve_original_user = true
+fail_closed = true
+
+[access.service_accounts]
+enabled = true
+allowed_accounts = local81-ci
+require_interactive_user = false
+allowed_sources = ci,systemd,timer
+fail_closed = true
+
+[access.external]
+enabled = true
+command = /usr/local/bin/local81-policy-check
+timeout_seconds = 5
+input_format = json
+fail_closed = true
+
 [scope "web"]
 enabled = true
 source_dir = /srv/source
@@ -96,6 +136,7 @@ write_plan "$tmpdir/.local81/plans/valid.plan.json"
   "$repo_root/bin/local81" doctor >"$tmpdir/doctor-valid.out"
 )
 grep -q '\[PASS\] config:schema:' "$tmpdir/doctor-valid.out"
+grep -q 'LDAP/AD provider is scaffolded only' "$tmpdir/doctor-valid.out"
 
 (
   cd "$tmpdir"

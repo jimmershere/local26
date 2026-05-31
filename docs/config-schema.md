@@ -84,6 +84,63 @@ Access policy is evaluated by `local81 deploy`, `local81 doctor`, and `local81 c
 
 Generated configs set `allow_remote_cmd = false` for least privilege. Runtime directories and generated run/state artifacts are always written owner-only by the runtime (`0700` directories and `0600` files). Existing configs without `[access]` continue to load, but `local81 doctor` and `local81 compliance report` warn that access policy is not configured.
 
+### `[access.providers]` (optional)
+
+Production authorization provider sections are scaffolded for future enterprise integrations. In v0.1 these sections are parsed, schema-validated, and reported by `doctor` / `compliance report`, but they do not make LDAP network calls, invoke sudo, execute external policy commands, or change deploy authorization decisions yet.
+
+| Key | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `enabled` | csv-string | no | empty | Provider names to enable: `ldap`, `sudo`, `service_accounts`, `external`. |
+| `fail_closed` | bool | no | `true` | Intended future behavior when a configured provider cannot be evaluated. |
+
+### `[access.ldap]` (optional scaffold)
+
+| Key | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `enabled` | bool | no | `false` | Enables LDAP/AD scaffold warnings. |
+| `uri` | string | no | empty | Should use `ldaps://`. |
+| `bind_dn` | string | no | empty | Directory bind DN. |
+| `bind_password_env` | string | no | empty | Environment variable containing the bind password. Never store the password directly in config. |
+| `user_base_dn` | string | no | empty | User search base. |
+| `group_base_dn` | string | no | empty | Group search base. |
+| `user_filter` | string | no | empty | User search filter template. |
+| `group_filter` | string | no | empty | Group search filter template. |
+| `allowed_groups` | csv-string | no | empty | Future deployer group mapping. |
+| `admin_groups` | csv-string | no | empty | Future admin group mapping. |
+| `cache_ttl_seconds` | int | no | `0` | Future lookup cache TTL; must be >= 0. |
+| `require_tls` | bool | no | `true` | Future TLS enforcement setting. |
+| `fail_closed` | bool | no | inherited | Future provider failure behavior. |
+
+### `[access.sudo]` (optional scaffold)
+
+| Key | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `enabled` | bool | no | `false` | Enables sudo scaffold warnings. |
+| `require_sudo_user` | bool | no | `false` | Future requirement for an original sudo actor. |
+| `allowed_sudo_users` | csv-string | no | empty | Future sudo user allowlist. |
+| `preserve_original_user` | bool | no | `true` | Future audit attribution behavior. |
+| `fail_closed` | bool | no | inherited | Future provider failure behavior. |
+
+### `[access.service_accounts]` (optional scaffold)
+
+| Key | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `enabled` | bool | no | `false` | Enables service-account scaffold warnings. |
+| `allowed_accounts` | csv-string | no | empty | Future service account allowlist. |
+| `require_interactive_user` | bool | no | `false` | Future non-interactive run guard. |
+| `allowed_sources` | csv-string | no | empty | Future source classes such as `ci`, `systemd`, `timer`. |
+| `fail_closed` | bool | no | inherited | Future provider failure behavior. |
+
+### `[access.external]` (optional scaffold)
+
+| Key | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `enabled` | bool | no | `false` | Enables external policy scaffold warnings. |
+| `command` | path | no | empty | Future JSON policy provider command. Not executed in v0.1. |
+| `timeout_seconds` | int | no | `5` | Future provider timeout; must be >= 1. |
+| `input_format` | string | no | `json` | Future provider input format. |
+| `fail_closed` | bool | no | inherited | Future provider failure behavior. |
+
 ### `[scope "NAME"]` (0..N)
 
 Each scope section name is literal form `[scope "<scope-name>"]`.

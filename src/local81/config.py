@@ -124,6 +124,43 @@ _INI_ALLOWED_KEYS = {
         "deny_root",
         "allow_remote_cmd",
     },
+    "access.providers": {"enabled", "fail_closed"},
+    "access.ldap": {
+        "enabled",
+        "uri",
+        "bind_dn",
+        "bind_password_env",
+        "user_base_dn",
+        "group_base_dn",
+        "user_filter",
+        "group_filter",
+        "allowed_groups",
+        "admin_groups",
+        "cache_ttl_seconds",
+        "require_tls",
+        "fail_closed",
+    },
+    "access.sudo": {
+        "enabled",
+        "require_sudo_user",
+        "allowed_sudo_users",
+        "preserve_original_user",
+        "fail_closed",
+    },
+    "access.service_accounts": {
+        "enabled",
+        "allowed_accounts",
+        "require_interactive_user",
+        "allowed_sources",
+        "fail_closed",
+    },
+    "access.external": {
+        "enabled",
+        "command",
+        "timeout_seconds",
+        "input_format",
+        "fail_closed",
+    },
     "notifications": {"notify_on_success"},
     "notification.telegram": {"enabled", "bot_token", "chat_id", "api_base"},
     "notification.email": {"enabled", "to", "sendmail_bin", "subject_prefix"},
@@ -182,6 +219,19 @@ _BOOLEAN_KEYS = {
     ("defaults", "dry_run_default"),
     ("access", "deny_root"),
     ("access", "allow_remote_cmd"),
+    ("access.providers", "fail_closed"),
+    ("access.ldap", "enabled"),
+    ("access.ldap", "require_tls"),
+    ("access.ldap", "fail_closed"),
+    ("access.sudo", "enabled"),
+    ("access.sudo", "require_sudo_user"),
+    ("access.sudo", "preserve_original_user"),
+    ("access.sudo", "fail_closed"),
+    ("access.service_accounts", "enabled"),
+    ("access.service_accounts", "require_interactive_user"),
+    ("access.service_accounts", "fail_closed"),
+    ("access.external", "enabled"),
+    ("access.external", "fail_closed"),
     ("notifications", "notify_on_success"),
     ("notification.telegram", "enabled"),
     ("notification.email", "enabled"),
@@ -300,6 +350,8 @@ def _validate_ini_config(path: Path) -> list[ConfigValidationFinding]:
     for section, option in _BOOLEAN_KEYS:
         _validate_bool(parser, section, option, findings)
     _validate_int(parser, "routing", "env_from_server_name_char_at", minimum=1, findings=findings)
+    _validate_int(parser, "access.ldap", "cache_ttl_seconds", minimum=0, findings=findings)
+    _validate_int(parser, "access.external", "timeout_seconds", minimum=1, findings=findings)
 
     if not scopes:
         findings.append(_validation_finding("WARN", "no [scope \"NAME\"] sections configured"))

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
 from local81.config import load_config, resolve_config_path
+from local81.plan_integrity import config_fingerprint
 from local81.state import load_scope_state
 
 
@@ -20,10 +20,6 @@ def _now_compact() -> str:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _config_fingerprint(config_path: Path) -> str:
-    return "sha256:" + hashlib.sha256(config_path.read_bytes()).hexdigest()
 
 
 def _discover_files(source_dir: Path, since: str | None) -> tuple[list[Path], list[Path]]:
@@ -187,7 +183,8 @@ def run_plan(*, only_scope: str | None = None, output_format: str = 'json', prin
 
     config_path = resolve_config_path()
     cfg = load_config(config_path)
-    plan_id = f"{_now_compact()}-{_config_fingerprint(config_path).split(':', 1)[1][:8]}"
+    config_hash = config_fingerprint(config_path)
+    plan_id = f"{_now_compact()}-{config_hash.split(':', 1)[1][:8]}"
     plan = {
         'local81_version': LOCAL81_VERSION,
         'kind': 'plan',
@@ -195,7 +192,7 @@ def run_plan(*, only_scope: str | None = None, output_format: str = 'json', prin
         'schema': SCHEMA,
         'plan_id': plan_id,
         'created_at': _now_iso(),
-        'config_fingerprint': _config_fingerprint(config_path),
+        'config_fingerprint': config_hash,
         'scopes': [],
     }
 

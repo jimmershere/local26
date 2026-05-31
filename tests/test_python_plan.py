@@ -5,6 +5,7 @@ from pathlib import Path
 
 from local81.cli import build_parser
 from local81.commands.plan import run_plan
+from local81.plan_integrity import config_fingerprint, is_valid_config_fingerprint
 
 
 def _write_legacy_settings(path: Path, src_dir: Path) -> None:
@@ -59,6 +60,18 @@ def test_run_plan_summary_honors_ci_mode(tmp_path: Path, monkeypatch, capsys) ->
     assert rc == 0
     assert "scope:myapp:" in out
     assert not list((tmp_path / ".local81" / "plans").glob("*.plan.json"))
+
+
+def test_run_plan_writes_config_fingerprint(tmp_path: Path, monkeypatch, capsys) -> None:
+    _prepare_project(tmp_path, monkeypatch)
+    capsys.readouterr()
+
+    rc = run_plan(print_stdout=True)
+    plan = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert plan["config_fingerprint"] == config_fingerprint(tmp_path / ".local81" / "config.ini")
+    assert is_valid_config_fingerprint(plan["config_fingerprint"])
 
 
 def test_plan_parser_accepts_summary_flag() -> None:

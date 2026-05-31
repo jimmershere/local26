@@ -16,6 +16,18 @@ class Actor:
     user: str
     uid: int
     groups: set[str] = field(default_factory=set)
+    effective_user: str | None = None
+    original_sudo_user: str | None = None
+    service_account: bool = False
+
+
+@dataclass(slots=True)
+class AuthProviderConfig:
+    name: str
+    enabled: bool = False
+    configured: bool = False
+    fail_closed: bool = True
+    details: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -27,6 +39,7 @@ class AccessPolicy:
     allowed_groups: set[str] = field(default_factory=set)
     deny_root: bool = False
     allow_remote_cmd: bool = True
+    providers: dict[str, AuthProviderConfig] = field(default_factory=dict)
     parse_errors: list[str] = field(default_factory=list)
 
 
@@ -42,6 +55,10 @@ class PolicyFinding:
 
 def _csv_set(value: str) -> set[str]:
     return {item.strip() for item in value.split(",") if item.strip()}
+
+
+def _csv_list(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _parse_bool(parser: configparser.ConfigParser, section: str, option: str, fallback: bool, errors: list[str]) -> bool:
@@ -75,7 +92,39 @@ def current_actor() -> Actor:
         group_name = _name_for_gid(gid)
         if group_name:
             groups.add(group_name)
-    return Actor(user=user, uid=uid, groups=groups)
+    original_sudo_user = os.environ.get("SUDO_USER") if uid == 0 else None
+    return Actor(
+        user=user,
+        uid=uid,
+        groups=groups,
+        effective_user=user,
+        original_sudo_user=original_sudo_user,
+    )
+
+
+def _provider_config(
+    parser: configparser.ConfigParser,
+    section: str,
+    *,
+    name: str,
+    fail_closed_default: bool = True,
+    errors: list[str],
+) -> AuthProviderConfig:
+    configured = parser.has_section(section)
+    enabled = _parse_bool(parser, section, "enabled", False, errors) if configured else False
+    fail_closed = _parse_bool(parser, section, "fail_closed", fail_closed_default, errors) if configured else fail_closed_default
+    details: dict[str, str] = {}
+    if configured:
+        for key, value in parser.items(section):
+            if key not in {"enabled", "fail_closed"}:
+                details[key] = value
+    return AuthProviderConfig(
+        name=name,
+        enabled=enabled,
+        configured=configured,
+        fail_closed=fail_closed,
+        details=details,
+    )
 
 
 def load_access_policy(path: str | Path = DEFAULT_CONFIG_PATH) -> AccessPolicy:
@@ -104,6 +153,22 @@ def load_access_policy(path: str | Path = DEFAULT_CONFIG_PATH) -> AccessPolicy:
     policy.allowed_groups = _csv_set(parser.get("access", "allowed_groups", fallback=""))
     policy.deny_root = _parse_bool(parser, "access", "deny_root", policy.deny_root, policy.parse_errors)
     policy.allow_remote_cmd = _parse_bool(parser, "access", "allow_remote_cmd", policy.allow_remote_cmd, policy.parse_errors)
+    configured_providers = _csv_list(parser.get("access.providers", "enabled", fallback="")) if parser.has_section("access.providers") else []
+    fail_closed_default = _parse_bool(parser, "access.providers", "fail_closed", True, policy.parse_errors)
+    provider_names = ["ldap", "sudo", "service_accounts", "external"]
+    for provider_name in provider_names:
+        section = f"access.{provider_name}"
+        provider = _provider_config(
+            parser,
+            section,
+            name=provider_name,
+            fail_closed_default=fail_closed_default,
+            errors=policy.parse_errors,
+        )
+        if provider_name in configured_providers and not provider.configured:
+            provider.configured = True
+            provider.enabled = True
+        policy.providers[provider_name] = provider
     return policy
 
 
@@ -126,6 +191,36 @@ def evaluate_actor(policy: AccessPolicy, actor: Actor | None = None) -> list[Pol
     if policy.allowed_groups and actor.groups.isdisjoint(policy.allowed_groups):
         allowed = ", ".join(sorted(policy.allowed_groups))
         findings.append(PolicyFinding("FAIL", "AC-3 access enforcement", f"actor is not a member of allowed_groups: {allowed}"))
+    return findings
+
+
+def evaluate_auth_providers(policy: AccessPolicy) -> list[PolicyFinding]:
+    findings: list[PolicyFinding] = []
+    for provider in policy.providers.values():
+        if not provider.configured:
+            continue
+        if not provider.enabled:
+            findings.append(PolicyFinding("WARN", "AC-3 access enforcement", f"{provider.name} authorization provider is configured but disabled"))
+            continue
+        if provider.name == "ldap":
+            uri = provider.details.get("uri", "")
+            if not uri:
+                findings.append(PolicyFinding("WARN", "IA-2 identification and authentication", "LDAP/AD provider enabled without uri"))
+            elif not uri.startswith("ldaps://"):
+                findings.append(PolicyFinding("WARN", "SC-8 transmission confidentiality", "LDAP/AD provider should use ldaps://"))
+            if not provider.details.get("bind_password_env"):
+                findings.append(PolicyFinding("WARN", "IA-5 authenticator management", "LDAP/AD bind password should be referenced by environment variable"))
+            findings.append(PolicyFinding("WARN", "AC-3 access enforcement", "LDAP/AD provider is scaffolded only; group lookup is not enforced yet"))
+        elif provider.name == "sudo":
+            findings.append(PolicyFinding("WARN", "AC-6 least privilege", "sudo provider is scaffolded only; sudo policy is not enforced yet"))
+        elif provider.name == "service_accounts":
+            if not provider.details.get("allowed_accounts"):
+                findings.append(PolicyFinding("WARN", "AC-2 account management", "service account provider enabled without allowed_accounts"))
+            findings.append(PolicyFinding("WARN", "AC-6 least privilege", "service account provider is scaffolded only; service account restrictions are not enforced yet"))
+        elif provider.name == "external":
+            if not provider.details.get("command"):
+                findings.append(PolicyFinding("WARN", "CM-6 configuration settings", "external policy provider enabled without command"))
+            findings.append(PolicyFinding("WARN", "AC-3 access enforcement", "external policy provider is scaffolded only; provider command is not executed yet"))
     return findings
 
 
@@ -169,6 +264,7 @@ def compliance_findings(policy: AccessPolicy | None = None) -> list[PolicyFindin
         findings.append(PolicyFinding("WARN", "CM-5 privileged functions", "remote command steps are allowed"))
     else:
         findings.append(PolicyFinding("PASS", "CM-5 privileged functions", "remote command steps are denied by default"))
+    findings.extend(evaluate_auth_providers(policy))
     findings.append(PolicyFinding("PASS", "AC-6 least privilege", "runtime directories and artifacts are owner-only by design"))
     findings.extend(evaluate_actor(policy))
     return findings

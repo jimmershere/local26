@@ -7,7 +7,8 @@ from local81.commands.deploy import _resolve_plan_path, parse_hosts_file, run_ch
 
 
 def _write_plan(path: Path, *, cmd: str = 'printf ok', rollback: bool = False,
-                host: str = "web1", scope_name: str = "web") -> None:
+                host: str = "web1", scope_name: str = "web",
+                extra: dict | None = None) -> None:
     step = {
         "id": f"scope:{scope_name}:0001",
         "type": "rsync",
@@ -23,6 +24,8 @@ def _write_plan(path: Path, *, cmd: str = 'printf ok', rollback: bool = False,
         "plan_id": "p1",
         "scopes": [{"scope": scope_name, "steps": [step]}],
     }
+    if extra:
+        payload.update(extra)
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
@@ -133,6 +136,89 @@ def test_check_valid_plan(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "Check passed" in out
     assert "Scopes: 1" in out
     assert "Total steps: 1" in out
+
+
+def test_check_warns_for_missing_config_fingerprint(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    plan_path = tmp_path / "plan.json"
+    _write_plan(plan_path)
+
+    rc = run_check(plan=str(plan_path))
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "[warn] plan is missing config_fingerprint provenance metadata" in out
+
+
+def test_check_warns_for_stale_config_fingerprint(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    config_dir = tmp_path / ".local81"
+    config_dir.mkdir()
+    (config_dir / "config.ini").write_text(
+        "[local81]\n"
+        "version = 0.1\n"
+        "project = test\n"
+        "default_scope = web\n"
+        "state_dir = .local81/state\n"
+        "plans_dir = .local81/plans\n"
+        "runs_dir = .local81/runs\n"
+        "logs_dir = .local81/logs\n"
+        "lock_file = .local81/local81.lock\n"
+        "require_plan_for_deploy = true\n"
+        "fail_fast = true\n"
+        "max_parallel = 1\n"
+        "shell = /usr/bin/bash\n"
+        "\n"
+        "[tools]\n"
+        "ssh = /usr/bin/ssh\n"
+        "rsync = /usr/bin/rsync\n"
+        "find = /usr/bin/find\n"
+        "\n"
+        "[defaults]\n"
+        "rsync_opts = -az\n"
+        "backup = false\n"
+        "backup_suffix = .bkp\n"
+        "remote_mkdir = true\n"
+        "dry_run_default = false\n"
+        "log_hosts =\n"
+        "log_dest_dir = .local81/pulled-logs\n"
+        "jboss_log_path =\n"
+        "apache_log_path =\n"
+        "engin_log_path =\n"
+        "smartxfr_log_path =\n"
+        "\n"
+        "[routing]\n"
+        "env_from_filename_prefix = s:sys,q:qa,p:production\n"
+        "env_from_server_name_char_at = 4\n"
+        "env_from_server_name_char_map = s:sys,q:qa,p:production\n"
+        "\n"
+        "[access]\n"
+        "allowed_users =\n"
+        "allowed_groups =\n"
+        "denied_users =\n"
+        "deny_root = false\n"
+        "allow_remote_cmd = false\n"
+        "\n"
+        "[scope \"web\"]\n"
+        "enabled = true\n"
+        "source_dir = /tmp/source\n"
+        "target_dir = /srv/target\n"
+        "servers = web1\n"
+        "discovery = mtime_since_last_success\n",
+        encoding="utf-8",
+    )
+    plan_path = tmp_path / "plan.json"
+    _write_plan(plan_path, extra={
+        "local81_version": "0.1",
+        "created_at": "2026-01-01T00:00:00Z",
+        "config_fingerprint": "sha256:" + ("0" * 64),
+    })
+
+    rc = run_check(plan=str(plan_path))
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "[warn] plan config_fingerprint does not match current config .local81/config.ini" in out
 
 
 def test_check_latest_plan(tmp_path: Path, monkeypatch, capsys) -> None:

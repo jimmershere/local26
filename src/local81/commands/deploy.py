@@ -11,8 +11,10 @@ from threading import Lock
 from time import monotonic
 
 from local81.config import load_config, resolve_config_path, validate_config
+from local81.execution_safety import summarize_execution_risks
 from local81.hooks import run_hook
 from local81.notifications import NotificationEvent, notify_all
+from local81.plan_integrity import plan_provenance_warnings
 from local81.policy import enforce_deploy_policy
 from local81.state import load_scope_state
 
@@ -131,6 +133,13 @@ def run_check(*, plan: str | None = None, use_latest: bool = False, scope: str |
         errors.append(f"kind should be 'plan', got {plan_data.get('kind')!r}")
     if plan_data.get("mode") != "deploy":
         errors.append(f"mode should be 'deploy', got {plan_data.get('mode')!r}")
+    current_config_path = None
+    try:
+        current_config_path = resolve_config_path()
+    except FileNotFoundError:
+        current_config_path = None
+    for finding in plan_provenance_warnings(plan_data, current_config_path=current_config_path):
+        warnings.append(finding.detail)
     scopes = plan_data.get("scopes", [])
     if scope and isinstance(scopes, list):
         scopes = [s for s in scopes if s.get("scope") == scope]
@@ -181,6 +190,12 @@ def run_check(*, plan: str | None = None, use_latest: bool = False, scope: str |
         elif finding.level == "WARN":
             warnings.append(finding.render())
             print(f"[warn] {finding.render()}")
+    execution_findings = summarize_execution_risks(scoped_plan_data)
+    if execution_findings:
+        print("Execution safety diagnostics:")
+    for finding in execution_findings:
+        warnings.append(finding.render())
+        print(f"[warn] {finding.render()}")
     print()
     if errors:
         print(f"Check failed with {len(errors)} error(s).")
