@@ -94,7 +94,7 @@ make quality
 - `src/local26`, Python implementation
 - `bin/local26`, source-tree launcher
 - `docs/`, operator docs
-- `packaging/rpm/`, first RPM packaging scaffold
+- `packaging/`, Debian and RPM package scaffolds
 
 ## Operator docs
 
@@ -110,12 +110,17 @@ Start here if another tech needs to pick it up quickly:
 - `examples/profile-prod.yaml`
 - `CONTRIBUTING.md`
 
-## RPM packaging
+## Install package builds
 
-A first RHEL-style packaging scaffold lives under `packaging/rpm/`.
+Debian/Ubuntu and RHEL-style package scaffolds live under `packaging/`.
 
 See:
-
+- `packaging/deb/README.md`
+- `packaging/deb/build-deb.sh`
 - `packaging/rpm/README.md`
 - `packaging/rpm/local26.spec`
 - `packaging/rpm/build-rpm.sh`
+
+Both package formats install Local-26 as an application bundle under `/opt/local26`,
+expose `/usr/bin/local26`, ship `/etc/local26/local26.ini.example`, and require a
+Python 3.12 runtime on the target system.

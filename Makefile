@@ -1,4 +1,4 @@
-.PHONY: test compile shell-test full-shell-test python-test lint format-check security-check quality ci clean-generated
+.PHONY: test compile shell-test full-shell-test python-test lint format-check security-check quality ci package-deb package-rpm package-rpm-container test-rpm-package clean-generated
 
 PYTHON ?= $(shell if [ -x .venv/bin/python ]; then printf '%s' .venv/bin/python; else printf '%s' python3; fi)
 BASELINE_SHELL_TESTS := \
@@ -54,6 +54,18 @@ security-check:
 quality: compile security-check lint format-check python-test
 
 ci: quality shell-test
+
+package-deb:
+	./packaging/deb/build-deb.sh
+
+package-rpm:
+	./packaging/rpm/build-rpm.sh
+
+package-rpm-container:
+	./packaging/rpm/build-rpm-container.sh
+
+test-rpm-package:
+	./packaging/rpm/test-rpm.sh
 
 clean-generated:
 	find src tests -type d \( -name __pycache__ -o -name .pytest_cache -o -name .mypy_cache -o -name .ruff_cache \) -prune -exec rm -rf {} +

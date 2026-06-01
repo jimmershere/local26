@@ -8,10 +8,13 @@ Current install layout:
 
 - `/usr/bin/local26`, operator entrypoint wrapper
 - `/opt/local26/app`, application source, docs, and packaging payload
-- `/opt/local26/venv`, isolated runtime virtualenv populated at build/install time
+- `/opt/local26/venv`, isolated runtime virtualenv populated at package build time
 - `/etc/local26/local26.ini.example`, packaged config example
 - `/var/lib/local26`, runtime state directory
-- `/var/lib/local26` ownership intended for `local26:local26`
+
+Because the package embeds an application virtualenv with Python executables and native dependency artifacts, the RPM is architecture-specific rather than `noarch`.
+
+RPM debug package and build-id link generation are disabled for this scaffold because Local-26 ships an application virtualenv, not project-compiled native binaries with useful debuginfo.
 
 ## Why this layout
 
@@ -54,11 +57,36 @@ packaging/rpm/.rpmbuild/RPMS/
 packaging/rpm/.rpmbuild/SRPMS/
 ```
 
+## Rocky container build
+
+If Docker is available:
+
+```bash
+./packaging/rpm/build-rpm-container.sh
+```
+
+The helper defaults to `docker run --rm rockylinux:9`, installs the RPM build dependencies inside the container, runs `packaging/rpm/test-rpm.sh`, and leaves artifacts under `packaging/rpm/.rpmbuild/`.
+
+You can override the runtime or image:
+
+```bash
+CONTAINER_RUNTIME=podman LOCAL26_RPM_CONTAINER_IMAGE=rockylinux:9 ./packaging/rpm/build-rpm-container.sh
+```
+
+## Validation
+
+From the repo root:
+
+```bash
+./packaging/rpm/test-rpm.sh
+```
+
+The validation helper always checks script syntax and verifies that the spec version matches `pyproject.toml`. If `rpmbuild` is available, it builds the RPM and inspects the resulting package. If `rpmbuild` is missing, it reports an explicit skip without treating the local machine as a failed RHEL builder.
+
 ## Current known blockers
 
-1. `rpmbuild` is not available in the current execution environment.
-2. The project requires Python 3.12+, which is not a standard base RHEL8 runtime.
-3. Local-26's packaged runtime/config contract still needs a final decision, specifically whether packaged runs should default to `/var/lib/local26` or remain repo-local.
+1. The project requires Python 3.12+, which is not a standard base RHEL8 runtime.
+2. Local-26's packaged runtime/config contract still needs a final decision, specifically whether packaged runs should default to `/var/lib/local26` or remain repo-local.
 
 ## Next hardening steps
 
