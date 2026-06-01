@@ -1,9 +1,11 @@
 # Local-26
-![Local-26 faux union seal](docs/assets/local26-logo.svg)
+![Local-26 IT operators union seal](docs/assets/local26-logo.png)
 
 **Operators’ Local-26 — plan, deploy, audit, hold the line.**
 
 Local-26 is a lean, operator-readable deployment and runbook control plane for file sync, plan generation, deploy execution, diagnostics, and security-conscious operator workflows.
+
+Support the line: Local-26 tee and mug runs may be offered for the Union Locals morale and welfare fund.
 
 Feedback, issues, and borrowed workflow ideas are welcome — especially if they help make Local-26 simpler, tougher, and easier for another operator to trust.
 
