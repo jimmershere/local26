@@ -25,7 +25,9 @@ need() {
 }
 
 need python3
+need python3.12
 need tar
+need rsync
 need rpmbuild
 
 rm -rf "${TOPDIR}"
@@ -39,6 +41,12 @@ rsync -a \
   --exclude '.pytest_cache' \
   --exclude '__pycache__' \
   --exclude '.mypy_cache' \
+  --exclude '.ruff_cache' \
+  --exclude '*.pyc' \
+  --exclude '*.egg-info' \
+  --exclude 'build' \
+  --exclude 'dist' \
+  --exclude 'packaging/deb/.debbuild' \
   --exclude 'packaging/rpm/.rpmbuild' \
   "${ROOT_DIR}/" "${SRCROOT}/"
 

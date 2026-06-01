@@ -1,11 +1,10 @@
 Name:           local81
 Version:        0.1.0
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Local-81 deployment control plane
 
 License:        Proprietary
 URL:            https://example.invalid/local81
-BuildArch:      noarch
 
 # Current codebase requires Python 3.12+. On RHEL8 this usually means a custom
 # builder/runtime or an internal python3.12 package stream.
@@ -17,11 +16,14 @@ BuildRequires:  python3.12-devel
 BuildRequires:  rpm-build
 Requires:       /bin/bash
 Requires:       python3.12
-Requires:       python3.12dist(pyyaml) >= 6.0
-Requires(pre):  shadow-utils
+Requires:       openssh-clients
+Requires:       rsync
+Requires:       findutils
 
 Source0:        %{name}-%{version}.tar.gz
 
+%global debug_package %{nil}
+%global _build_id_links none
 %global app_root /opt/local81
 %global app_lib %{app_root}/app
 %global app_venv %{app_root}/venv
@@ -37,59 +39,48 @@ and provisions /etc/local81 and /var/lib/local81 for runtime configuration and d
 %autosetup -n %{name}-%{version}
 
 %build
-python3.12 -m venv build-venv
-source build-venv/bin/activate
-pip install --upgrade pip setuptools wheel
-pip install .
+# Python dependencies are installed into the packaged application virtualenv
+# during %%install so the wrapper always runs against /opt/local81/venv.
 
 %install
 rm -rf %{buildroot}
 install -d %{buildroot}%{app_lib}
-cp -a bin docs src pyproject.toml README.md Makefile %{buildroot}%{app_lib}/
+cp -a bin docs examples src %{buildroot}%{app_lib}/
+install -m 0644 pyproject.toml %{buildroot}%{app_lib}/pyproject.toml
+install -m 0644 README.md %{buildroot}%{app_lib}/README.md
+install -m 0644 CONTRIBUTING.md %{buildroot}%{app_lib}/CONTRIBUTING.md
 
-python3.12 -m venv %{buildroot}%{app_venv}
-source %{buildroot}%{app_venv}/bin/activate
-pip install --upgrade pip setuptools wheel
-pip install %{buildroot}%{app_lib}
+python3.12 -m venv --copies %{buildroot}%{app_venv}
+%{buildroot}%{app_venv}/bin/python -m pip install --disable-pip-version-check --upgrade pip setuptools wheel
+%{buildroot}%{app_venv}/bin/python -m pip install --disable-pip-version-check %{buildroot}%{app_lib}
+rm -rf %{buildroot}%{app_lib}/build %{buildroot}%{app_lib}/src/*.egg-info
+grep -RIl "%{buildroot}" %{buildroot}%{app_venv} | xargs -r sed -i "s#%{buildroot}##g"
 
 install -d %{buildroot}%{_bindir}
-install -m 0755 packaging/rpm/scripts/local81-wrapper %{buildroot}%{_bindir}/local81
+install -m 0755 packaging/common/local81-wrapper %{buildroot}%{_bindir}/local81
 
 install -d %{buildroot}%{_sysconfdir}/local81
 install -m 0644 packaging/rpm/local81.ini %{buildroot}%{_sysconfdir}/local81/local81.ini.example
 
 install -d %{buildroot}%{_sharedstatedir}/local81
-install -d %{buildroot}%{_localstatedir}/lib/local81
 install -d %{buildroot}%{_docdir}/%{name}
 install -m 0644 packaging/rpm/README.md %{buildroot}%{_docdir}/%{name}/
-
-%pre
-getent group local81 >/dev/null || groupadd -r local81
-getent passwd local81 >/dev/null || useradd -r -g local81 -d /var/lib/local81 -s /sbin/nologin -c "Local-81 service account" local81
-exit 0
+%check
+LOCAL81_HOME=%{buildroot}%{app_root} %{buildroot}%{_bindir}/local81 --help >/dev/null
+LOCAL81_HOME=%{buildroot}%{app_root} %{buildroot}%{_bindir}/local81 help >/dev/null
 
 %files
 %doc %{_docdir}/%{name}/README.md
 %dir %{app_root}
-%dir %{app_lib}
-%dir %{app_venv}
-%{app_lib}/README.md
-%{app_lib}/Makefile
-%{app_lib}/pyproject.toml
-%{app_lib}/bin
-%{app_lib}/docs
-%{app_lib}/src
+%{app_lib}
 %{app_venv}
 %{_bindir}/local81
 %dir %{_sysconfdir}/local81
 %config(noreplace) %{_sysconfdir}/local81/local81.ini.example
 %dir %{_sharedstatedir}/local81
-%dir %{_localstatedir}/lib/local81
-
-%post
-chown -R local81:local81 %{_localstatedir}/lib/local81 %{_sharedstatedir}/local81 || true
-exit 0
 
 %changelog
+* Mon Jun 01 2026 Local-81 Operators <local81@example.invalid> - 0.1.0-2
+- Align RPM application bundle with Debian packaging layout and add smoke checks
 * Tue Apr 21 2026 OpenClaw <openclaw@example.invalid> - 0.1.0-1
 - Initial RPM packaging scaffold
