@@ -1,4 +1,4 @@
-local26:
+local81:
   profile: prod
 
 defaults:
@@ -16,7 +16,7 @@ compliance:
   profile: cms-ars-5.1
   scope: all
   fail_on: high
-  report_dir: .local26/compliance
+  report_dir: .local81/compliance
   controls:
     - NIST_SP_800_53:AC-3
     - NIST_SP_800_53:CM-6

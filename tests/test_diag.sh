@@ -11,17 +11,17 @@ mkdir -p "$tmpdir/stubs"
 cat > "$tmpdir/stubs/ssh" <<'SSH'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'ssh %s\n' "$*" >> "${LOCAL26_STUB_LOG}"
+printf 'ssh %s\n' "$*" >> "${LOCAL81_STUB_LOG}"
 printf 'stdout:%s\n' "$1"
 printf 'stderr:%s\n' "$1" >&2
 SSH
 chmod +x "$tmpdir/stubs/ssh"
 
-export LOCAL26_STUB_LOG="$tmpdir/ssh.log"
+export LOCAL81_STUB_LOG="$tmpdir/ssh.log"
 
 out_dir="$tmpdir/diag-out"
-PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" diag \
-  --project local26-project \
+PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" diag \
+  --project local81-project \
   --hosts cmsap1,cmspr1 \
   --diag-type strace \
   --pid 4242 \
@@ -45,7 +45,7 @@ for row in rows:
 PY
 
 out_dir_dry="$tmpdir/diag-dry"
-PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" diag \
+PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" diag \
   --hosts 127.0.0.1 \
   --remote-cmd 'uname -a' \
   --out-dir "$out_dir_dry" \

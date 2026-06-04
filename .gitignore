@@ -13,7 +13,7 @@ dist/
 .eggs/
 *.egg
 *.log
-.local26/
+.local81/
 .brv/
 *.egg-info/
 tools/SF-*.b64.txt

@@ -4,7 +4,7 @@ This walkthrough assumes a simple Phase 1 setup with one scope named `main`.
 
 ## 1. Initialize the project
 ```bash
-local26 init --guided
+local81 init --guided
 ```
 Suggested first answers:
 - scope: `main`
@@ -16,13 +16,13 @@ That gives you a cautious first rollout.
 
 ## 2. Run doctor
 ```bash
-local26 doctor
+local81 doctor
 ```
 You want a clean result or only minor warnings before the first live deploy.
 
 ## 3. Generate the plan summary
 ```bash
-local26 plan --summary
+local81 plan --summary
 ```
 Look for:
 - the correct scope name
@@ -33,28 +33,28 @@ Look for:
 ## 4. Find the plan file
 If you need the full plan path:
 ```bash
-ls -1 .local26/plans/*.plan.json | tail -n1
+ls -1 .local81/plans/*.plan.json | tail -n1
 ```
 
 ## 5. Run a dry run first
 ```bash
-local26 deploy --plan .local26/plans/<plan-id>.plan.json --scope main --dry-run
+local81 deploy --plan .local81/plans/<plan-id>.plan.json --scope main --dry-run
 ```
 This records a run without executing remote commands.
 
 ## 6. Run the live deploy
 ```bash
-local26 deploy --plan .local26/plans/<plan-id>.plan.json --scope main --fail-fast
+local81 deploy --plan .local81/plans/<plan-id>.plan.json --scope main --fail-fast
 ```
 What to expect:
-- Local-26 shows the selected plan and scope
+- Local-81 shows the selected plan and scope
 - each step is announced as it runs
 - failures are called out clearly
-- a run record is written under `.local26/runs/<run-id>/run.json`
+- a run record is written under `.local81/runs/<run-id>/run.json`
 
 ## 7. Confirm the outcome
 ```bash
-local26 status
+local81 status
 ```
 If the deploy succeeded, you should see the latest run ID and result.
 
@@ -66,7 +66,7 @@ If the deploy succeeded, you should see the latest run ID and result.
 5. rerun deploy
 
 ## Useful files after the first deploy
-- `.local26/config.ini`
-- `.local26/plans/*.plan.json`
-- `.local26/runs/*/run.json`
-- `.local26/state/*.json`
+- `.local81/config.ini`
+- `.local81/plans/*.plan.json`
+- `.local81/runs/*/run.json`
+- `.local81/state/*.json`

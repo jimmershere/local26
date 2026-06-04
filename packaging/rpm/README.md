@@ -1,31 +1,31 @@
-# Local-26 RPM scaffold
+# Local-81 RPM scaffold
 
-This directory contains the first operator-grade RPM packaging scaffold for Local-26.
+This directory contains the first operator-grade RPM packaging scaffold for Local-81.
 
 ## Packaging model
 
 Current install layout:
 
-- `/usr/bin/local26`, operator entrypoint wrapper
-- `/opt/local26/app`, application source, docs, and packaging payload
-- `/opt/local26/venv`, isolated runtime virtualenv populated at package build time
-- `/etc/local26/local26.ini.example`, packaged config example
-- `/var/lib/local26`, runtime state directory
+- `/usr/bin/local81`, operator entrypoint wrapper
+- `/opt/local81/app`, application source, docs, and packaging payload
+- `/opt/local81/venv`, isolated runtime virtualenv populated at package build time
+- `/etc/local81/local81.ini.example`, packaged config example
+- `/var/lib/local81`, runtime state directory
 
 Because the package embeds an application virtualenv with Python executables and native dependency artifacts, the RPM is architecture-specific rather than `noarch`.
 
-RPM debug package and build-id link generation are disabled for this scaffold because Local-26 ships an application virtualenv, not project-compiled native binaries with useful debuginfo.
+RPM debug package and build-id link generation are disabled for this scaffold because Local-81 ships an application virtualenv, not project-compiled native binaries with useful debuginfo.
 
 ## Why this layout
 
-Local-26 is not yet shaped like a native system Python package for stock RHEL8. It currently:
+Local-81 is not yet shaped like a native system Python package for stock RHEL8. It currently:
 
 - targets Python `>=3.12`
 - depends on `PyYAML`
 - carries both Python and shell entrypoints
-- is better presented as an application bundle under `/opt/local26`
+- is better presented as an application bundle under `/opt/local81`
 
-That makes an `/opt/local26` payload with a stable `/usr/bin/local26` wrapper the safest first professional package shape.
+That makes an `/opt/local81` payload with a stable `/usr/bin/local81` wrapper the safest first professional package shape.
 
 ## Build prerequisites
 
@@ -70,7 +70,7 @@ The helper defaults to `docker run --rm rockylinux:9`, installs the RPM build de
 You can override the runtime or image:
 
 ```bash
-CONTAINER_RUNTIME=podman LOCAL26_RPM_CONTAINER_IMAGE=rockylinux:9 ./packaging/rpm/build-rpm-container.sh
+CONTAINER_RUNTIME=podman LOCAL81_RPM_CONTAINER_IMAGE=rockylinux:9 ./packaging/rpm/build-rpm-container.sh
 ```
 
 ## Validation
@@ -86,10 +86,10 @@ The validation helper always checks script syntax and verifies that the spec ver
 ## Current known blockers
 
 1. The project requires Python 3.12+, which is not a standard base RHEL8 runtime.
-2. Local-26's packaged runtime/config contract still needs a final decision, specifically whether packaged runs should default to `/var/lib/local26` or remain repo-local.
+2. Local-81's packaged runtime/config contract still needs a final decision, specifically whether packaged runs should default to `/var/lib/local81` or remain repo-local.
 
 ## Next hardening steps
 
-- add a tested config lookup strategy for `/etc/local26` and `/var/lib/local26`
+- add a tested config lookup strategy for `/etc/local81` and `/var/lib/local81`
 - decide whether to vendor wheels vs. build online in the RPM buildroot
 - add CI that runs `rpmbuild -ba` in a clean Rocky/RHEL-compatible builder

@@ -1,4 +1,4 @@
-/app/giles/local26/floor2.txt
+/app/giles/local81/floor2.txt
 /home/jimmer/.ssh/floor2_key.pub
 /home/jimmer/.ssh/floor2_key
 /home/jimmer/.openclaw/secrets/floor2.env

@@ -31,7 +31,7 @@ SCP
 
   (
     cd "$tmpdir"
-    PATH="${tmpdir}/stubs:$PATH" "$repo_root/bin/local26" pull-logs --settings "${tmpdir}/settings.cfg" >"${tmpdir}/out.txt"
+    PATH="${tmpdir}/stubs:$PATH" "$repo_root/bin/local81" pull-logs --settings "${tmpdir}/settings.cfg" >"${tmpdir}/out.txt"
   )
 
   grep -q 'Pulled logs to ./collected (success=6, failed=0)' "${tmpdir}/out.txt"
@@ -58,7 +58,7 @@ SCP
 
   (
     cd "$tmpdir"
-    PATH="${tmpdir}/stubs:$PATH" "$repo_root/bin/local26" pull-logs \
+    PATH="${tmpdir}/stubs:$PATH" "$repo_root/bin/local81" pull-logs \
       --hosts "h1" \
       --dest "${tmpdir}/logs" \
       --jboss-path "/tmp/jboss.log" >"${tmpdir}/out.txt"
@@ -76,7 +76,7 @@ test_pull_logs_missing_paths_fails() {
   set +e
   (
     cd "$tmpdir"
-    "$repo_root/bin/local26" pull-logs --hosts "h1" >"${tmpdir}/out.txt" 2>"${tmpdir}/err.txt"
+    "$repo_root/bin/local81" pull-logs --hosts "h1" >"${tmpdir}/out.txt" 2>"${tmpdir}/err.txt"
   )
   local rc=$?
   set -e

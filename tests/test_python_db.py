@@ -4,10 +4,10 @@ import sqlite3
 from argparse import Namespace
 from pathlib import Path
 
-from local26.config import validate_config
-from local26.db.config import load_database_targets
-from local26.db.redaction import redact_mapping
-from local26.db.runner import run_database_command
+from local81.config import validate_config
+from local81.db.config import load_database_targets
+from local81.db.redaction import redact_mapping
+from local81.db.runner import run_database_command
 
 
 def test_redacts_literal_secret_keys() -> None:
@@ -34,20 +34,20 @@ password_env = DB_PASSWORD
 
 
 def test_validate_config_rejects_literal_database_password(tmp_path: Path) -> None:
-    local26 = tmp_path / ".local26"
-    local26.mkdir()
-    cfg = local26 / "config.ini"
+    local81 = tmp_path / ".local81"
+    local81.mkdir()
+    cfg = local81 / "config.ini"
     cfg.write_text(
         """
-[local26]
+[local81]
 version = 0.1
 project = db-test
 default_scope = main
-state_dir = .local26/state
-plans_dir = .local26/plans
-runs_dir = .local26/runs
-logs_dir = .local26/logs
-lock_file = .local26/local26.lock
+state_dir = .local81/state
+plans_dir = .local81/plans
+runs_dir = .local81/runs
+logs_dir = .local81/logs
+lock_file = .local81/local81.lock
 require_plan_for_deploy = true
 fail_fast = true
 max_parallel = 1
@@ -65,7 +65,7 @@ backup_suffix = .bkp
 remote_mkdir = true
 dry_run_default = false
 log_hosts =
-log_dest_dir = .local26/pulled-logs
+log_dest_dir = .local81/pulled-logs
 jboss_log_path =
 apache_log_path =
 engin_log_path =

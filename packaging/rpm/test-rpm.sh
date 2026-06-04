@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RPM_DIR="${ROOT_DIR}/packaging/rpm"
-SPEC="${RPM_DIR}/local26.spec"
+SPEC="${RPM_DIR}/local81.spec"
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -15,8 +15,8 @@ need() {
 need python3
 
 bash -n "${RPM_DIR}/build-rpm.sh"
-bash -n "${ROOT_DIR}/packaging/common/local26-wrapper"
-bash -n "${RPM_DIR}/scripts/local26-wrapper"
+bash -n "${ROOT_DIR}/packaging/common/local81-wrapper"
+bash -n "${RPM_DIR}/scripts/local81-wrapper"
 
 PROJECT_VERSION="$(ROOT_DIR="${ROOT_DIR}" python3 - <<'PY'
 from pathlib import Path
@@ -43,7 +43,7 @@ fi
 
 "${RPM_DIR}/build-rpm.sh"
 
-RPM_ARTIFACT="$(find "${RPM_DIR}/.rpmbuild/RPMS" -type f -name 'local26-*.rpm' | sort | tail -n 1)"
+RPM_ARTIFACT="$(find "${RPM_DIR}/.rpmbuild/RPMS" -type f -name 'local81-*.rpm' | sort | tail -n 1)"
 if [ ! -f "${RPM_ARTIFACT}" ]; then
   printf 'RPM artifact not found under %s\n' "${RPM_DIR}/.rpmbuild/RPMS" >&2
   exit 1

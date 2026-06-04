@@ -5,7 +5,7 @@ import json
 import os
 from configparser import ConfigParser
 
-from local26.commands.guided import (
+from local81.commands.guided import (
     GuidedAnswers,
     _normalize_servers,
     generate_config,
@@ -55,7 +55,7 @@ def test_generate_config_has_all_sections():
     config_text = generate_config(answers)
     cp = ConfigParser()
     cp.read_string(config_text)
-    assert "local26" in cp
+    assert "local81" in cp
     assert "tools" in cp
     assert "defaults" in cp
     assert "routing" in cp
@@ -79,10 +79,10 @@ def test_generate_config_values():
     config_text = generate_config(answers)
     cp = ConfigParser()
     cp.read_string(config_text)
-    assert cp["local26"]["project"] == "testproj"
-    assert cp["local26"]["default_scope"] == "deploy"
-    assert cp["local26"]["fail_fast"] == "false"
-    assert cp["local26"]["max_parallel"] == "2"
+    assert cp["local81"]["project"] == "testproj"
+    assert cp["local81"]["default_scope"] == "deploy"
+    assert cp["local81"]["fail_fast"] == "false"
+    assert cp["local81"]["max_parallel"] == "2"
     assert cp["defaults"]["backup"] == "true"
     assert cp["defaults"]["backup_suffix"] == ".old"
     assert cp["defaults"]["remote_mkdir"] == "false"
@@ -126,9 +126,9 @@ def test_generate_config_constant_defaults():
     config_text = generate_config(answers)
     cp = ConfigParser()
     cp.read_string(config_text)
-    assert cp["local26"]["version"] == "0.1"
-    assert cp["local26"]["state_dir"] == ".local26/state"
-    assert cp["local26"]["shell"] == "/usr/bin/bash"
+    assert cp["local81"]["version"] == "0.1"
+    assert cp["local81"]["state_dir"] == ".local81/state"
+    assert cp["local81"]["shell"] == "/usr/bin/bash"
     assert cp["tools"]["ssh"] == "/usr/bin/ssh"
     assert cp["tools"]["rsync"] == "/usr/bin/rsync"
     assert cp["defaults"]["rsync_opts"] == "-az"
@@ -361,29 +361,29 @@ def test_run_guided_writes_config(tmp_path):
         os.chdir(original)
 
     assert rc == 0
-    config_ini_path = tmp_path / ".local26" / "config.ini"
-    config_yaml_path = tmp_path / ".local26" / "config.yaml"
+    config_ini_path = tmp_path / ".local81" / "config.ini"
+    config_yaml_path = tmp_path / ".local81" / "config.yaml"
     assert config_ini_path.exists()
     assert config_yaml_path.exists()
 
     cp = ConfigParser()
     cp.read(str(config_ini_path))
-    assert cp["local26"]["project"] == "testproj"
+    assert cp["local81"]["project"] == "testproj"
     assert 'scope "main"' in cp
     assert cp['scope "main"']["servers"] == "web1,web2"
     assert cp['scope "main"']["rsync_opts"] == "-az --delete"
 
     # State file written
-    state_file = tmp_path / ".local26" / "state" / "main.json"
+    state_file = tmp_path / ".local81" / "state" / "main.json"
     assert state_file.exists()
     state = json.loads(state_file.read_text())
     assert state["scope"] == "main"
-    assert state["schema"] == "local26.state.v0.1"
+    assert state["schema"] == "local81.state.v0.1"
 
     # Directories created
-    assert (tmp_path / ".local26" / "plans").is_dir()
-    assert (tmp_path / ".local26" / "runs").is_dir()
-    assert (tmp_path / ".local26" / "logs").is_dir()
+    assert (tmp_path / ".local81" / "plans").is_dir()
+    assert (tmp_path / ".local81" / "runs").is_dir()
+    assert (tmp_path / ".local81" / "logs").is_dir()
 
 
 def test_run_guided_cancel(tmp_path):
@@ -412,14 +412,14 @@ def test_run_guided_cancel(tmp_path):
         os.chdir(original)
 
     assert rc == 1
-    assert not (tmp_path / ".local26" / "config.ini").exists()
-    assert not (tmp_path / ".local26" / "config.yaml").exists()
+    assert not (tmp_path / ".local81" / "config.ini").exists()
+    assert not (tmp_path / ".local81" / "config.yaml").exists()
     assert "Cancelled" in out.getvalue()
 
 
 def test_run_guided_existing_config_without_force(tmp_path):
-    (tmp_path / ".local26").mkdir()
-    (tmp_path / ".local26" / "config.ini").write_text("[local26]\n")
+    (tmp_path / ".local81").mkdir()
+    (tmp_path / ".local81" / "config.ini").write_text("[local81]\n")
     out = io.StringIO()
     inp = io.StringIO("")
     original = os.getcwd()
@@ -433,8 +433,8 @@ def test_run_guided_existing_config_without_force(tmp_path):
 
 
 def test_run_guided_existing_yaml_without_force(tmp_path):
-    (tmp_path / ".local26").mkdir()
-    (tmp_path / ".local26" / "config.yaml").write_text("local26: {}\n")
+    (tmp_path / ".local81").mkdir()
+    (tmp_path / ".local81" / "config.yaml").write_text("local81: {}\n")
     out = io.StringIO()
     inp = io.StringIO("")
     original = os.getcwd()
@@ -448,8 +448,8 @@ def test_run_guided_existing_yaml_without_force(tmp_path):
 
 
 def test_run_guided_existing_config_with_force(tmp_path):
-    (tmp_path / ".local26").mkdir()
-    (tmp_path / ".local26" / "config.ini").write_text("[local26]\n")
+    (tmp_path / ".local81").mkdir()
+    (tmp_path / ".local81" / "config.ini").write_text("[local81]\n")
     source_dir = tmp_path / "src"
     source_dir.mkdir()
     inp = _make_input([
@@ -475,11 +475,11 @@ def test_run_guided_existing_config_with_force(tmp_path):
         os.chdir(original)
     assert rc == 0
     cp = ConfigParser()
-    cp.read(str(tmp_path / ".local26" / "config.ini"))
-    assert cp["local26"]["project"] == "forced"
+    cp.read(str(tmp_path / ".local81" / "config.ini"))
+    assert cp["local81"]["project"] == "forced"
 
 
-def test_run_guided_config_parseable_by_local26_config_loader(tmp_path):
+def test_run_guided_config_parseable_by_local81_config_loader(tmp_path):
     source_dir = tmp_path / "app-src"
     source_dir.mkdir()
     inp = _make_input([
@@ -506,9 +506,9 @@ def test_run_guided_config_parseable_by_local26_config_loader(tmp_path):
         os.chdir(original)
     assert rc == 0
 
-    from local26.config import load_config
+    from local81.config import load_config
 
-    cfg = load_config(tmp_path / ".local26" / "config.ini")
+    cfg = load_config(tmp_path / ".local81" / "config.ini")
     assert cfg.project == "integtest"
     assert len(cfg.scopes) == 1
     assert cfg.scopes[0].name == "main"
@@ -516,7 +516,7 @@ def test_run_guided_config_parseable_by_local26_config_loader(tmp_path):
     assert cfg.scopes[0].servers == ["svr1", "svr2"]
 
 
-def test_yaml_config_parseable_by_local26_config_loader(tmp_path):
+def test_yaml_config_parseable_by_local81_config_loader(tmp_path):
     source_dir = tmp_path / "app-src"
     source_dir.mkdir()
     inp = _make_input([
@@ -540,9 +540,9 @@ def test_yaml_config_parseable_by_local26_config_loader(tmp_path):
         os.chdir(tmp_path)
         rc = run_guided(force=False, inp=inp, out=out)
         assert rc == 0
-        os.remove(tmp_path / ".local26" / "config.ini")
-        from local26.config import load_config
-        cfg = load_config(tmp_path / ".local26" / "config.ini")
+        os.remove(tmp_path / ".local81" / "config.ini")
+        from local81.config import load_config
+        cfg = load_config(tmp_path / ".local81" / "config.ini")
     finally:
         os.chdir(original)
     assert cfg.project == "yamltest"
@@ -554,7 +554,7 @@ def test_yaml_config_parseable_by_local26_config_loader(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_cli_guided_flag():
-    from local26.cli import build_parser
+    from local81.cli import build_parser
     parser = build_parser()
     args = parser.parse_args(["init", "--guided"])
     assert args.guided is True
@@ -562,7 +562,7 @@ def test_cli_guided_flag():
 
 
 def test_cli_init_without_guided():
-    from local26.cli import build_parser
+    from local81.cli import build_parser
     parser = build_parser()
     args = parser.parse_args(["init"])
     assert args.guided is False
@@ -591,7 +591,7 @@ def test_preview_shown_before_write():
     preview_out = io.StringIO()
     preview_config(config_text, out=preview_out)
     preview = preview_out.getvalue()
-    assert "[local26]" in preview
+    assert "[local81]" in preview
     assert '[scope "main"]' in preview
     assert "Config preview" in preview
     assert "YAML mirror" in preview

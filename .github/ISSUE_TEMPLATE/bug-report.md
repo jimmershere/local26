@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug or broken behavior in Local-26
+about: Report a bug or broken behavior in Local-81
 title: "[bug] "
 labels: [bug]
 assignees: []

@@ -8,7 +8,7 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 cat > "${tmpdir}/modern.ini" <<'CFG'
-[local26]
+[local81]
 version = 0.1
 project = fixture
 
@@ -33,15 +33,15 @@ touch -d '2024-06-01 01:02:03 UTC' "${tmpdir}/state/web.last"
 
 (
   cd "$tmpdir"
-  "$repo_root/bin/local26" init --force --import "${tmpdir}/modern.ini"
+  "$repo_root/bin/local81" init --force --import "${tmpdir}/modern.ini"
 )
 
-test -f "${tmpdir}/.local26/config.ini"
-cmp -s "${tmpdir}/modern.ini" "${tmpdir}/.local26/config.ini"
+test -f "${tmpdir}/.local81/config.ini"
+cmp -s "${tmpdir}/modern.ini" "${tmpdir}/.local81/config.ini"
 
-test -f "${tmpdir}/.local26/state/web.json"
-test -f "${tmpdir}/.local26/state/api.json"
-grep -Eq '"last_success"[[:space:]]*:[[:space:]]*"2024-06-01T01:02:03Z"' "${tmpdir}/.local26/state/web.json"
-grep -Eq '"last_success"[[:space:]]*:[[:space:]]*null' "${tmpdir}/.local26/state/api.json"
+test -f "${tmpdir}/.local81/state/web.json"
+test -f "${tmpdir}/.local81/state/api.json"
+grep -Eq '"last_success"[[:space:]]*:[[:space:]]*"2024-06-01T01:02:03Z"' "${tmpdir}/.local81/state/web.json"
+grep -Eq '"last_success"[[:space:]]*:[[:space:]]*null' "${tmpdir}/.local81/state/api.json"
 
 echo "test_init_modern.sh: ok"

@@ -49,11 +49,11 @@ def main() -> int:
             if line.rstrip(b" \t") != line:
                 findings.append(f"{rel}:{line_number}: trailing whitespace")
     if findings:
-        print("Local-26 format check failed:")
+        print("Local-81 format check failed:")
         for finding in findings:
             print(f"  - {finding}")
         return 1
-    print("Local-26 format check passed.")
+    print("Local-81 format check passed.")
     return 0
 
 

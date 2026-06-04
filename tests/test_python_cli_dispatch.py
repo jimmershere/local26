@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import local26.cli as cli
+import local81.cli as cli
 
 
 def test_main_dispatches_history(monkeypatch) -> None:
@@ -11,7 +11,7 @@ def test_main_dispatches_history(monkeypatch) -> None:
         return 17
 
     monkeypatch.setattr(cli, "run_history", fake_run_history)
-    monkeypatch.setattr("sys.argv", ["local26", "history", "--limit", "7"])
+    monkeypatch.setattr("sys.argv", ["local81", "history", "--limit", "7"])
 
     assert cli.main() == 17
     assert called == {"limit": 7}
@@ -25,7 +25,7 @@ def test_main_dispatches_logs(monkeypatch) -> None:
         return 9
 
     monkeypatch.setattr(cli, "run_logs", fake_run_logs)
-    monkeypatch.setattr("sys.argv", ["local26", "logs", "run-123"])
+    monkeypatch.setattr("sys.argv", ["local81", "logs", "run-123"])
 
     assert cli.main() == 9
     assert called == {"run_id": "run-123"}
@@ -33,13 +33,13 @@ def test_main_dispatches_logs(monkeypatch) -> None:
 
 def test_main_dispatches_hooks(monkeypatch) -> None:
     monkeypatch.setattr(cli, "run_hooks", lambda: 5)
-    monkeypatch.setattr("sys.argv", ["local26", "hooks"])
+    monkeypatch.setattr("sys.argv", ["local81", "hooks"])
     assert cli.main() == 5
 
 
 def test_main_dispatches_profiles(monkeypatch) -> None:
     monkeypatch.setattr(cli, "run_profiles", lambda: 6)
-    monkeypatch.setattr("sys.argv", ["local26", "profiles"])
+    monkeypatch.setattr("sys.argv", ["local81", "profiles"])
     assert cli.main() == 6
 
 
@@ -51,7 +51,7 @@ def test_main_dispatches_profile_create(monkeypatch) -> None:
         return 4
 
     monkeypatch.setattr(cli, "run_profile_create", fake_run_profile_create)
-    monkeypatch.setattr("sys.argv", ["local26", "profile", "create", "prod"])
+    monkeypatch.setattr("sys.argv", ["local81", "profile", "create", "prod"])
 
     assert cli.main() == 4
     assert called == {"name": "prod"}
@@ -65,7 +65,7 @@ def test_main_dispatches_guided_init(monkeypatch) -> None:
         return 8
 
     monkeypatch.setattr(cli, "run_guided", fake_run_guided)
-    monkeypatch.setattr("sys.argv", ["local26", "init", "--guided", "--force"])
+    monkeypatch.setattr("sys.argv", ["local81", "init", "--guided", "--force"])
 
     assert cli.main() == 8
     assert called == {"force": True}
@@ -80,7 +80,7 @@ def test_main_dispatches_db_doctor(monkeypatch) -> None:
         return 12
 
     monkeypatch.setattr(cli, "run_db", fake_run_db)
-    monkeypatch.setattr("sys.argv", ["local26", "db", "doctor", "--target", "main"])
+    monkeypatch.setattr("sys.argv", ["local81", "db", "doctor", "--target", "main"])
 
     assert cli.main() == 12
     assert called == {"command": "doctor", "target": "main"}
@@ -96,7 +96,7 @@ def test_main_dispatches_compliance_harden_plan(monkeypatch) -> None:
         return 13
 
     monkeypatch.setattr(cli, "run_compliance", fake_run_compliance)
-    monkeypatch.setattr("sys.argv", ["local26", "compliance", "harden-plan", "--scope", "linux", "--format", "json"])
+    monkeypatch.setattr("sys.argv", ["local81", "compliance", "harden-plan", "--scope", "linux", "--format", "json"])
 
     assert cli.main() == 13
     assert called == {"command": "harden-plan", "scope": "linux", "format": "json"}

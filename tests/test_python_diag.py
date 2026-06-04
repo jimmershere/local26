@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from local26.commands.diag import diag_remote_command_for_type, resolve_diag_hosts_for_project, run_diag
+from local81.commands.diag import diag_remote_command_for_type, resolve_diag_hosts_for_project, run_diag
 
 
 def test_diag_remote_command_for_type_variants() -> None:
@@ -13,13 +13,13 @@ def test_diag_remote_command_for_type_variants() -> None:
 
 
 def test_resolve_diag_hosts_for_project_aliases() -> None:
-    hosts = resolve_diag_hosts_for_project("local26-project", "cmsap1,cmspr1")
+    hosts = resolve_diag_hosts_for_project("local81-project", "cmsap1,cmspr1")
     assert hosts == "10.242.225.11,10.242.209.11"
 
 
 def test_resolve_diag_hosts_for_project_rejects_disabled_host() -> None:
     try:
-        resolve_diag_hosts_for_project("local26-project", "cmppr1")
+        resolve_diag_hosts_for_project("local81-project", "cmppr1")
     except ValueError as exc:
         assert "unknown or disabled host token" in str(exc)
     else:
@@ -63,9 +63,9 @@ def test_run_diag_invokes_ssh(tmp_path: Path, monkeypatch, capsys) -> None:
         assert text is True
         return Result()
 
-    monkeypatch.setattr("local26.commands.diag.subprocess.run", fake_run)
+    monkeypatch.setattr("local81.commands.diag.subprocess.run", fake_run)
 
-    rc = run_diag(project="local26-project", hosts="cmsap1", pid="4242", out_dir=str(out_dir))
+    rc = run_diag(project="local81-project", hosts="cmsap1", pid="4242", out_dir=str(out_dir))
 
     out = capsys.readouterr().out
     assert rc == 0
@@ -82,12 +82,12 @@ def test_run_diag_requires_pid_without_remote_cmd(capsys) -> None:
 
 
 def test_cli_diag_command() -> None:
-    from local26.cli import build_parser
+    from local81.cli import build_parser
 
     parser = build_parser()
     args = parser.parse_args([
         "diag",
-        "--project", "local26-project",
+        "--project", "local81-project",
         "--hosts", "cmsap1,cmspr1",
         "--diag-type", "strace",
         "--pid", "4242",
@@ -98,7 +98,7 @@ def test_cli_diag_command() -> None:
         "--dry-run",
     ])
     assert args.command == "diag"
-    assert args.project == "local26-project"
+    assert args.project == "local81-project"
     assert args.hosts == "cmsap1,cmspr1"
     assert args.diag_type == "strace"
     assert args.pid == "4242"
