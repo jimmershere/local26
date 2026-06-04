@@ -11,7 +11,7 @@ Feedback, issues, and borrowed workflow ideas are welcome — especially if they
 
 ## The name: a tribute to Local 81
 
-This software is named **Local 81** in honor of the bakery union local at the **Chef Pierre** plant in **Traverse City, Michigan** — the storied pie bakery (founded in 1922 and famous in the Cherry Capital of the World) where union members ran the line for many years.
+This software is named **Local 81** in honor of the real **Local 81** — the bakery union local at the **Chef Pierre** plant in **Traverse City, Michigan** — the storied pie bakery (founded in 1922 and famous in the Cherry Capital of the World) where the members of Local 81 ran the line for many years.
 
 We borrowed that union-hall ethos on purpose. A deployment tool, like a bakery floor, runs on the same values the Local stood for: skilled hands, dependable shifts, plans you can read, and work you can hand to the next operator with confidence. Every run is **union made** — planned, audited, and accountable. Calling it Local 81 keeps that heritage of organized, careful, take-pride-in-the-work labor at the center of the tool.
 
