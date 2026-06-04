@@ -7,6 +7,10 @@ Local-81 is a lean, operator-readable deployment and runbook control plane for f
 
 Support the line: Local-81 tee and mug runs may be offered for the Union Locals morale and welfare fund.
 
+## The name
+
+Local-81 is named in honor of the real **Local 81**, the bakery union local at the **Chef Pierre** plant in **Traverse City, Michigan** — the long-running pie bakery (est. 1922) where the members of Local 81 held the line for many years. The tool borrows that union-hall ethos: skilled work, dependable shifts, readable plans, and runs you can hand to the next operator. Every deploy is union made — planned, audited, and accountable.
+
 ## Start here
 - [Quickstart](quickstart.md)
 - [Setup guide](setup-guide.md)
