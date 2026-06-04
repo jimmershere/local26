@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RUNTIME="${CONTAINER_RUNTIME:-docker}"
-IMAGE="${LOCAL26_RPM_CONTAINER_IMAGE:-rockylinux:9}"
+IMAGE="${LOCAL81_RPM_CONTAINER_IMAGE:-rockylinux:9}"
 HOST_UID="$(id -u)"
 HOST_GID="$(id -g)"
 
@@ -16,8 +16,8 @@ fi
 "${RUNTIME}" run --rm \
   -e "HOST_UID=${HOST_UID}" \
   -e "HOST_GID=${HOST_GID}" \
-  -v "${ROOT_DIR}:/workspace/local26" \
-  -w /workspace/local26 \
+  -v "${ROOT_DIR}:/workspace/local81" \
+  -w /workspace/local81 \
   "${IMAGE}" \
   /bin/bash -lc '
     set -euo pipefail

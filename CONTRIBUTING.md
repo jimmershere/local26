@@ -1,8 +1,8 @@
-# Contributing to Local-26
+# Contributing to Local-81
 
-Thanks for taking a look at Local-26.
+Thanks for taking a look at Local-81.
 
-Local-26 is meant to be practical, operator-friendly, and easy to reason about under pressure. Contributions are welcome when they make the tool simpler, tougher, clearer, or more useful for real deployment work.
+Local-81 is meant to be practical, operator-friendly, and easy to reason about under pressure. Contributions are welcome when they make the tool simpler, tougher, clearer, or more useful for real deployment work.
 
 ## Good contribution types
 - bug fixes
@@ -23,13 +23,13 @@ Local-26 is meant to be practical, operator-friendly, and easy to reason about u
 
 ## Local setup
 ```bash
-cd /path/to/local26
+cd /path/to/local81
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -e .[dev]
 ```
-Local-26 currently targets Python 3.12 or newer.
+Local-81 currently targets Python 3.12 or newer.
 
 ## Verify before proposing changes
 ```bash
@@ -37,17 +37,17 @@ make test
 make python-test
 make quality
 make full-shell-test
-python -m local26.cli --help
-python -m local26.cli doctor --help
-python -m local26.cli deploy --help
+python -m local81.cli --help
+python -m local81.cli doctor --help
+python -m local81.cli deploy --help
 ```
 
 For workflow additions, also verify the affected command help directly, for example:
 ```bash
-python -m local26.cli pull --help
-python -m local26.cli diag --help
-python -m local26.cli pull-logs --help
-python -m local26.cli diff --help
+python -m local81.cli pull --help
+python -m local81.cli diag --help
+python -m local81.cli pull-logs --help
+python -m local81.cli diff --help
 ```
 
 ## Docs to keep in sync
@@ -61,7 +61,7 @@ When command behavior changes, review these files together:
 
 ## Examples and fit
 Before adding a feature, read:
-- `docs/when-to-use-local26.md`
+- `docs/when-to-use-local81.md`
 - `examples/legacy-settings.cfg.example`
 - `examples/profile-prod.yaml`
 

@@ -1,12 +1,12 @@
-# Local-26 Debian package
-This directory builds an internal Ubuntu/Debian `.deb` package for Local-26.
+# Local-81 Debian package
+This directory builds an internal Ubuntu/Debian `.deb` package for Local-81.
 ## Packaging model
 The package installs:
-- `/usr/bin/local26`, wrapper entrypoint
-- `/opt/local26/app`, application source and operator docs
-- `/opt/local26/venv`, isolated Python runtime populated during package build
-- `/etc/local26/local26.ini.example`, packaged config example
-- `/var/lib/local26`, reserved packaged runtime state directory
+- `/usr/bin/local81`, wrapper entrypoint
+- `/opt/local81/app`, application source and operator docs
+- `/opt/local81/venv`, isolated Python runtime populated during package build
+- `/etc/local81/local81.ini.example`, packaged config example
+- `/var/lib/local81`, reserved packaged runtime state directory
 ## Build prerequisites
 Expected on the build host:
 - `dpkg-deb`
@@ -24,7 +24,7 @@ Artifacts land under:
 packaging/deb/.debbuild/artifacts/
 ```
 ## Smoke test
-The smoke test extracts the package into a temporary directory and runs the packaged wrapper with `LOCAL26_HOME` pointed at the extracted payload, so it does not install into the host system:
+The smoke test extracts the package into a temporary directory and runs the packaged wrapper with `LOCAL81_HOME` pointed at the extracted payload, so it does not install into the host system:
 ```bash
-./packaging/deb/test-deb.sh packaging/deb/.debbuild/artifacts/local26_0.1.0-1_all.deb
+./packaging/deb/test-deb.sh packaging/deb/.debbuild/artifacts/local81_0.1.0-1_all.deb
 ```

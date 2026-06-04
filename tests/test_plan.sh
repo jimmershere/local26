@@ -30,7 +30,7 @@ CFG
 
 (
   cd "$tmpdir"
-  "$repo_root/bin/local26" init --force --project demo >/dev/null
+  "$repo_root/bin/local81" init --force --project demo >/dev/null
 )
 
 git_src="${tmpdir}/git-src"
@@ -46,14 +46,14 @@ mkdir -p "$git_src/app"
 )
 git_sha="$(cd "$git_src" && /usr/bin/git rev-parse HEAD)"
 
-cat >> "${tmpdir}/.local26/config.ini" <<CFG
+cat >> "${tmpdir}/.local81/config.ini" <<CFG
 
 [scope "git1"]
 enabled = true
 workspace = git
 repo_url = ${git_src}
 ref = HEAD
-workspace_dir = .local26/workspaces/git1
+workspace_dir = .local81/workspaces/git1
 source_subdir = app
 target_dir = /srv/git
 servers = localhost
@@ -64,7 +64,7 @@ backup_suffix = .bkp
 remote_mkdir = true
 CFG
 
-python3 - <<'PY' "$tmpdir/.local26/state/test1.json" "$tmpdir/.local26/state/test2.json" "$tmpdir/.local26/state/git1.json"
+python3 - <<'PY' "$tmpdir/.local81/state/test1.json" "$tmpdir/.local81/state/test2.json" "$tmpdir/.local81/state/git1.json"
 import json,sys
 for p in sys.argv[1:3]:
     with open(p) as f:
@@ -73,16 +73,16 @@ for p in sys.argv[1:3]:
     with open(p,"w") as f:
         json.dump(data,f,separators=(",",":"))
 with open(sys.argv[3],"w") as f:
-    json.dump({"schema":"local26.state.v0.1","scope":"git1","last_success":None,"last_plan_id":None,"last_run_id":None,"files_last_deployed_count":0},f,separators=(",",":"))
+    json.dump({"schema":"local81.state.v0.1","scope":"git1","last_success":None,"last_plan_id":None,"last_run_id":None,"files_last_deployed_count":0},f,separators=(",",":"))
 PY
 
-plan_json="$(cd "$tmpdir" && "$repo_root/bin/local26" plan --format json --stdout)"
+plan_json="$(cd "$tmpdir" && "$repo_root/bin/local81" plan --format json --stdout)"
 
 python3 - <<'PY' "$plan_json" "$git_sha"
 import json,sys
 plan=json.loads(sys.argv[1])
 expected_git_sha=sys.argv[2]
-assert plan["schema"]=="local26.plan.v0.1"
+assert plan["schema"]=="local81.plan.v0.1"
 assert plan["kind"]=="plan"
 assert plan["mode"]=="deploy"
 assert plan["config_fingerprint"].startswith("sha256:")

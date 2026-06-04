@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Minimal development/source-tree launcher for Local-81.
+# Product logic lives in the Python package; this wrapper only locates src/ and execs it.
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+python_src="${repo_root}/src"
+
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'local81: python3 is required
+' >&2
+  exit 127
+fi
+
+PYTHONPATH="${python_src}${PYTHONPATH:+:${PYTHONPATH}}" exec python3 -m local81.cli "$@"

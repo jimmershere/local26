@@ -9,24 +9,24 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 make_workspace() {
   local dir="$1"
-  mkdir -p "$dir/.local26/state" "$dir/.local26/plans" "$dir/.local26/runs" "$dir/stubs"
-  cat > "$dir/.local26/config.ini" <<'CFG'
-[local26]
+  mkdir -p "$dir/.local81/state" "$dir/.local81/plans" "$dir/.local81/runs" "$dir/stubs"
+  cat > "$dir/.local81/config.ini" <<'CFG'
+[local81]
 version = 0.1
 CFG
 
   local fp
-  fp="$(sha256sum "$dir/.local26/config.ini" | awk '{print $1}')"
+  fp="$(sha256sum "$dir/.local81/config.ini" | awk '{print $1}')"
 
   # Write plan with 3 rsync steps; rollback cmds are bash -lc echo strings
-  python3 - <<'PY' "$dir/.local26/plans/test.plan.json" "$fp"
+  python3 - <<'PY' "$dir/.local81/plans/test.plan.json" "$fp"
 import json, sys
 path, fp = sys.argv[1:]
 plan = {
-  "schema":        "local26.plan.v0.1",
+  "schema":        "local81.plan.v0.1",
   "kind":          "plan",
   "mode":          "deploy",
-  "local26_version": "0.1",
+  "local81_version": "0.1",
   "plan_id":       "p1",
   "created_at":    "2024-01-01T00:00:00Z",
   "config_fingerprint": f"sha256:{fp}",
@@ -63,24 +63,24 @@ with open(path, "w", encoding="utf-8") as f:
     json.dump(plan, f, separators=(",", ":"))
 PY
 
-  # stub: records calls; supports LOCAL26_FAIL_STEP env (1-based index)
+  # stub: records calls; supports LOCAL81_FAIL_STEP env (1-based index)
   cat > "$dir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
 n=0
-nfile="${LOCAL26_STUB_LOG}.count"
+nfile="${LOCAL81_STUB_LOG}.count"
 [ -f "$nfile" ] && n="$(cat "$nfile")"
 n=$((n + 1))
 printf '%s' "$n" > "$nfile"
-printf 'rsync-call-%d %s\n' "$n" "$*" >> "${LOCAL26_STUB_LOG}"
-fail_step="${LOCAL26_FAIL_STEP:-0}"
+printf 'rsync-call-%d %s\n' "$n" "$*" >> "${LOCAL81_STUB_LOG}"
+fail_step="${LOCAL81_FAIL_STEP:-0}"
 [ "$fail_step" -eq 0 ] || [ "$n" -ne "$fail_step" ] || exit 5
 RSYNC
   chmod +x "$dir/stubs/rsync"
 
   cat > "$dir/stubs/ssh" <<'SSH'
 #!/usr/bin/env bash
-printf 'ssh %s\n' "$*" >> "${LOCAL26_STUB_LOG}"
+printf 'ssh %s\n' "$*" >> "${LOCAL81_STUB_LOG}"
 SSH
   chmod +x "$dir/stubs/ssh"
 }
@@ -97,19 +97,19 @@ test_step_timeout() {
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'rsync %s\n' "$*" >> "${LOCAL26_STUB_LOG}"
+printf 'rsync %s\n' "$*" >> "${LOCAL81_STUB_LOG}"
 if [[ "$*" == *"/tmp/a"* ]]; then
   sleep 30
 fi
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   local rc=0
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
-      --plan "$tmpdir/.local26/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy \
+      --plan "$tmpdir/.local81/plans/test.plan.json" \
       --scope web \
       --max-parallel 1 \
       --step-timeout 2 \
@@ -120,8 +120,8 @@ RSYNC
 
   # run.json must exist; timed-out step rc should be 124 (GNU timeout)
   local run_dir
-  run_dir="$(ls -1 "$tmpdir/.local26/runs" | LC_ALL=C sort | tail -n1)"
-  local run_json="$tmpdir/.local26/runs/$run_dir/run.json"
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | LC_ALL=C sort | tail -n1)"
+  local run_json="$tmpdir/.local81/runs/$run_dir/run.json"
   [ -f "$run_json" ] || { echo "FAIL test_step_timeout: run.json missing"; return 1; }
 
   python3 - <<'PY' "$run_json"
@@ -149,15 +149,15 @@ test_rollback_on_failure() {
 
   # Override plan so rollback cmds write to $rb_log
   local fp
-  fp="$(sha256sum "$tmpdir/.local26/config.ini" | awk '{print $1}')"
-  python3 - <<'PY' "$tmpdir/.local26/plans/test.plan.json" "$fp" "$rb_log"
+  fp="$(sha256sum "$tmpdir/.local81/config.ini" | awk '{print $1}')"
+  python3 - <<'PY' "$tmpdir/.local81/plans/test.plan.json" "$fp" "$rb_log"
 import json, sys
 path, fp, rb_log = sys.argv[1:]
 plan = {
-  "schema":        "local26.plan.v0.1",
+  "schema":        "local81.plan.v0.1",
   "kind":          "plan",
   "mode":          "deploy",
-  "local26_version": "0.1",
+  "local81_version": "0.1",
   "plan_id":       "p1",
   "created_at":    "2024-01-01T00:00:00Z",
   "config_fingerprint": f"sha256:{fp}",
@@ -192,21 +192,21 @@ PY
 #!/usr/bin/env bash
 set -euo pipefail
 n=0
-nfile="${LOCAL26_STUB_LOG}.count"
+nfile="${LOCAL81_STUB_LOG}.count"
 [ -f "$nfile" ] && n="$(cat "$nfile")"
 n=$((n + 1))
 printf '%s' "$n" > "$nfile"
-printf 'rsync-call-%d\n' "$n" >> "${LOCAL26_STUB_LOG}"
+printf 'rsync-call-%d\n' "$n" >> "${LOCAL81_STUB_LOG}"
 [ "$n" -ne 2 ] || exit 7
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   local rc=0
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
-      --plan "$tmpdir/.local26/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy \
+      --plan "$tmpdir/.local81/plans/test.plan.json" \
       --scope web \
       --max-parallel 1 \
       --rollback-on-failure \
@@ -217,8 +217,8 @@ RSYNC
 
   # rollback.log should be written
   local run_dir
-  run_dir="$(ls -1 "$tmpdir/.local26/runs" | LC_ALL=C sort | tail -n1)"
-  local rollback_log="$tmpdir/.local26/runs/$run_dir/rollback.log"
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | LC_ALL=C sort | tail -n1)"
+  local rollback_log="$tmpdir/.local81/runs/$run_dir/rollback.log"
   [ -f "$rollback_log" ] || { echo "FAIL test_rollback_on_failure: rollback.log not written"; return 1; }
 
   # Only prior successful steps should be rolled back; here step 1 succeeded then step 2 failed.
@@ -247,21 +247,21 @@ test_fail_fast() {
 #!/usr/bin/env bash
 set -euo pipefail
 n=0
-nfile="${LOCAL26_STUB_LOG}.count"
+nfile="${LOCAL81_STUB_LOG}.count"
 [ -f "$nfile" ] && n="$(cat "$nfile")"
 n=$((n + 1))
 printf '%s' "$n" > "$nfile"
-printf 'rsync-call-%d\n' "$n" >> "${LOCAL26_STUB_LOG}"
+printf 'rsync-call-%d\n' "$n" >> "${LOCAL81_STUB_LOG}"
 [ "$n" -ne 1 ] || exit 3
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   local rc=0
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
-      --plan "$tmpdir/.local26/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy \
+      --plan "$tmpdir/.local81/plans/test.plan.json" \
       --scope web \
       --max-parallel 1 \
       --fail-fast \
@@ -272,13 +272,13 @@ RSYNC
 
   # Only 1 rsync call should have been made (step 1 failed, 2+3 skipped)
   local call_count
-  call_count="$(wc -l < "$LOCAL26_STUB_LOG" | tr -d ' ')"
+  call_count="$(wc -l < "$LOCAL81_STUB_LOG" | tr -d ' ')"
   [ "$call_count" -eq 1 ] || { echo "FAIL test_fail_fast: expected 1 rsync call, got $call_count"; return 1; }
 
   # run.json should record 3 steps: rc=3, rc=-1, rc=-1
   local run_dir
-  run_dir="$(ls -1 "$tmpdir/.local26/runs" | LC_ALL=C sort | tail -n1)"
-  python3 - <<'PY' "$tmpdir/.local26/runs/$run_dir/run.json"
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | LC_ALL=C sort | tail -n1)"
+  python3 - <<'PY' "$tmpdir/.local81/runs/$run_dir/run.json"
 import json, sys
 run = json.load(open(sys.argv[1]))
 assert run["rc"] != 0, f"run rc should be non-zero"
@@ -303,21 +303,21 @@ test_no_fail_fast() {
 #!/usr/bin/env bash
 set -euo pipefail
 n=0
-nfile="${LOCAL26_STUB_LOG}.count"
+nfile="${LOCAL81_STUB_LOG}.count"
 [ -f "$nfile" ] && n="$(cat "$nfile")"
 n=$((n + 1))
 printf '%s' "$n" > "$nfile"
-printf 'rsync-call-%d\n' "$n" >> "${LOCAL26_STUB_LOG}"
+printf 'rsync-call-%d\n' "$n" >> "${LOCAL81_STUB_LOG}"
 [ "$n" -ne 1 ] || exit 3
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   local rc=0
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
-      --plan "$tmpdir/.local26/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy \
+      --plan "$tmpdir/.local81/plans/test.plan.json" \
       --scope web \
       --max-parallel 1 \
       --no-fail-fast \
@@ -328,12 +328,12 @@ RSYNC
 
   # All 3 rsync calls should have been made
   local call_count
-  call_count="$(wc -l < "$LOCAL26_STUB_LOG" | tr -d ' ')"
+  call_count="$(wc -l < "$LOCAL81_STUB_LOG" | tr -d ' ')"
   [ "$call_count" -eq 3 ] || { echo "FAIL test_no_fail_fast: expected 3 rsync calls, got $call_count"; return 1; }
 
   local run_dir
-  run_dir="$(ls -1 "$tmpdir/.local26/runs" | LC_ALL=C sort | tail -n1)"
-  python3 - <<'PY' "$tmpdir/.local26/runs/$run_dir/run.json"
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | LC_ALL=C sort | tail -n1)"
+  python3 - <<'PY' "$tmpdir/.local81/runs/$run_dir/run.json"
 import json, sys
 run = json.load(open(sys.argv[1]))
 assert len(run["steps"]) == 3, f"expected 3 steps, got {len(run['steps'])}"
@@ -356,15 +356,15 @@ test_rollback_no_failure_no_log() {
 
   cat > "$tmpdir/stubs/rsync" <<'RSYNC'
 #!/usr/bin/env bash
-printf 'rsync %s\n' "$*" >> "${LOCAL26_STUB_LOG}"
+printf 'rsync %s\n' "$*" >> "${LOCAL81_STUB_LOG}"
 RSYNC
   chmod +x "$tmpdir/stubs/rsync"
 
-  export LOCAL26_STUB_LOG="$tmpdir/calls.log"
+  export LOCAL81_STUB_LOG="$tmpdir/calls.log"
   (
     cd "$tmpdir"
-    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local26" deploy \
-      --plan "$tmpdir/.local26/plans/test.plan.json" \
+    PATH="$tmpdir/stubs:$PATH" "$repo_root/bin/local81" deploy \
+      --plan "$tmpdir/.local81/plans/test.plan.json" \
       --scope web \
       --max-parallel 1 \
       --rollback-on-failure \
@@ -372,9 +372,9 @@ RSYNC
   )
 
   local run_dir
-  run_dir="$(ls -1 "$tmpdir/.local26/runs" | LC_ALL=C sort | tail -n1)"
+  run_dir="$(ls -1 "$tmpdir/.local81/runs" | LC_ALL=C sort | tail -n1)"
   # rollback.log must NOT exist when all steps succeed
-  [ ! -f "$tmpdir/.local26/runs/$run_dir/rollback.log" ] || {
+  [ ! -f "$tmpdir/.local81/runs/$run_dir/rollback.log" ] || {
     echo "FAIL test_rollback_no_failure_no_log: rollback.log should not exist on success"
     return 1
   }

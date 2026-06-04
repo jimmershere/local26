@@ -4,10 +4,10 @@
 
 ```json
 {
-  "local26_version": "0.1",
+  "local81_version": "0.1",
   "kind": "plan",
   "mode": "deploy",
-  "schema": "local26.plan.v0.1",
+  "schema": "local81.plan.v0.1",
   "plan_id": "20260101T000000Z-abc123",
   "created_at": "2026-01-01T00:00:00Z",
   "config_fingerprint": "sha256:<hex>",
@@ -67,6 +67,6 @@ Each `scopes[]` entry contains:
 
 ## Plan integrity and approval gates
 
-Generated plans include `config_fingerprint`, a `sha256:<64 lowercase hex>` digest of the config file used to build the plan. `local26 deploy --check` treats missing, malformed, or stale fingerprint metadata as warnings so operators can identify plans generated from older config without changing live deploy behavior.
+Generated plans include `config_fingerprint`, a `sha256:<64 lowercase hex>` digest of the config file used to build the plan. `local81 deploy --check` treats missing, malformed, or stale fingerprint metadata as warnings so operators can identify plans generated from older config without changing live deploy behavior.
 
 Approval-gate enforcement needs a product decision before it can become blocking deploy behavior. A future approval model should define who can approve a plan, what exact plan/config fingerprint is approved, how approvals expire, and whether emergency deploys can bypass the gate. Until those decisions are made, integrity diagnostics should remain advisory outside `deploy --check` validation.

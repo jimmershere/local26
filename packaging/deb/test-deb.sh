@@ -17,7 +17,7 @@ need dpkg-deb
 if [ "${1:-}" ]; then
   PACKAGE="$1"
 else
-  PACKAGE="$(find "${BUILD_DIR}/artifacts" -type f -name 'local26_*.deb' | sort | tail -n 1)"
+  PACKAGE="$(find "${BUILD_DIR}/artifacts" -type f -name 'local81_*.deb' | sort | tail -n 1)"
 fi
 
 if [ ! -f "${PACKAGE}" ]; then
@@ -36,11 +36,11 @@ dpkg-deb --contents "${PACKAGE}" >/dev/null
 dpkg-deb -x "${PACKAGE}" "${TMP_DIR}/root"
 dpkg-deb -e "${PACKAGE}" "${TMP_DIR}/control"
 
-test -x "${TMP_DIR}/root/usr/bin/local26"
-test -x "${TMP_DIR}/root/opt/local26/venv/bin/python"
-test -f "${TMP_DIR}/root/etc/local26/local26.ini.example"
+test -x "${TMP_DIR}/root/usr/bin/local81"
+test -x "${TMP_DIR}/root/opt/local81/venv/bin/python"
+test -f "${TMP_DIR}/root/etc/local81/local81.ini.example"
 
-LOCAL26_HOME="${TMP_DIR}/root/opt/local26" "${TMP_DIR}/root/usr/bin/local26" --help >/dev/null
-LOCAL26_HOME="${TMP_DIR}/root/opt/local26" "${TMP_DIR}/root/usr/bin/local26" help >/dev/null
+LOCAL81_HOME="${TMP_DIR}/root/opt/local81" "${TMP_DIR}/root/usr/bin/local81" --help >/dev/null
+LOCAL81_HOME="${TMP_DIR}/root/opt/local81" "${TMP_DIR}/root/usr/bin/local81" help >/dev/null
 
 printf 'Debian package smoke test passed: %s\n' "${PACKAGE}"

@@ -1,10 +1,10 @@
 # LOCAL-26 Config Schema v0.1
 
-This document defines the canonical `.local26/config.ini` contract for LOCAL-26 v0.1.
+This document defines the canonical `.local81/config.ini` contract for LOCAL-26 v0.1.
 
 ## Parsing and validation rules
 
-`local26 doctor` and `local26 deploy --check` run strict schema validation:
+`local81 doctor` and `local81 deploy --check` run strict schema validation:
 
 - Unknown sections are errors.
 - Unknown keys in known sections are errors.
@@ -20,18 +20,18 @@ The runtime loader remains compatibility-oriented for older configs, but product
 
 ## Canonical structure
 
-### `[local26]` (required)
+### `[local81]` (required)
 
 | Key | Type | Required | Default | Notes |
 |---|---|---:|---|---|
 | `version` | string | yes | `0.1` | Must equal `0.1` for this schema version. |
 | `project` | string | yes | none | Human-readable project identifier. |
 | `default_scope` | string | yes | none | Must match one defined scope name when scopes exist. |
-| `state_dir` | path | yes | `.local26/state` | State JSON directory. |
-| `plans_dir` | path | yes | `.local26/plans` | Plan artifacts directory. |
-| `runs_dir` | path | yes | `.local26/runs` | Run artifacts directory. |
-| `logs_dir` | path | yes | `.local26/logs` | Log directory. |
-| `lock_file` | path | yes | `.local26/local26.lock` | Global LOCAL-26 lock file. |
+| `state_dir` | path | yes | `.local81/state` | State JSON directory. |
+| `plans_dir` | path | yes | `.local81/plans` | Plan artifacts directory. |
+| `runs_dir` | path | yes | `.local81/runs` | Run artifacts directory. |
+| `logs_dir` | path | yes | `.local81/logs` | Log directory. |
+| `lock_file` | path | yes | `.local81/local81.lock` | Global LOCAL-26 lock file. |
 | `require_plan_for_deploy` | bool | yes | `true` | Enforces precomputed plans before deploy. |
 | `fail_fast` | bool | yes | `true` | Stop on first error. |
 | `max_parallel` | int | yes | `4` | Must be >= 1. |
@@ -55,8 +55,8 @@ The runtime loader remains compatibility-oriented for older configs, but product
 | `backup_suffix` | string | yes | `.bkp` | Backup suffix default. |
 | `remote_mkdir` | bool | yes | `true` | Ensure remote target directory exists. |
 | `dry_run_default` | bool | yes | `false` | Dry run default behavior. |
-| `log_hosts` | csv-string | yes | empty | Default host list for `local26 pull-logs`. |
-| `log_dest_dir` | path | yes | `.local26/pulled-logs` | Local destination for pulled diagnostics. |
+| `log_hosts` | csv-string | yes | empty | Default host list for `local81 pull-logs`. |
+| `log_dest_dir` | path | yes | `.local81/pulled-logs` | Local destination for pulled diagnostics. |
 | `jboss_log_path` | path | yes | empty | Remote JBoss log path or glob for `pull-logs`. |
 | `apache_log_path` | path | yes | empty | Remote Apache log path or glob for `pull-logs`. |
 | `engin_log_path` | path | yes | empty | Remote Engin log path or glob for `pull-logs`. |
@@ -72,7 +72,7 @@ The runtime loader remains compatibility-oriented for older configs, but product
 
 ### `[access]` (recommended)
 
-Access policy is evaluated by `local26 deploy`, `local26 doctor`, and `local26 compliance report`.
+Access policy is evaluated by `local81 deploy`, `local81 doctor`, and `local81 compliance report`.
 
 | Key | Type | Required | Default | Notes |
 |---|---|---:|---|---|
@@ -82,7 +82,7 @@ Access policy is evaluated by `local26 deploy`, `local26 doctor`, and `local26 c
 | `deny_root` | bool | no | `false` | When `true`, blocks deploy/compliance actor checks for UID 0. |
 | `allow_remote_cmd` | bool | no | `true` | When `false`, deploy blocks selected plan steps with `type = remote_cmd`. |
 
-Generated configs set `allow_remote_cmd = false` for least privilege. Runtime directories and generated run/state artifacts are always written owner-only by the runtime (`0700` directories and `0600` files). Existing configs without `[access]` continue to load, but `local26 doctor` and `local26 compliance report` warn that access policy is not configured.
+Generated configs set `allow_remote_cmd = false` for least privilege. Runtime directories and generated run/state artifacts are always written owner-only by the runtime (`0700` directories and `0600` files). Existing configs without `[access]` continue to load, but `local81 doctor` and `local81 compliance report` warn that access policy is not configured.
 
 ### `[access.providers]` (optional)
 
@@ -166,7 +166,7 @@ Optional keys:
 
 ### `[database "NAME"]` (0..N)
 
-Database targets power `local26 db` commands. The section name is literal form `[database "<target-name>"]`.
+Database targets power `local81 db` commands. The section name is literal form `[database "<target-name>"]`.
 
 | Key | Type | Required | Notes |
 |---|---|---:|---|
@@ -187,11 +187,11 @@ Database targets power `local26 db` commands. The section name is literal form `
 | `retention_days`, `artifact_retention_days` | int | no | Retention hints. |
 | `tools` | csv-string | no | Optional tool profile hints. |
 
-Never store literal passwords, tokens, or keys in database target sections. Use `*_env`, `*_ref`, or `*_file` fields so Local-26 can plan commands without printing secret values.
+Never store literal passwords, tokens, or keys in database target sections. Use `*_env`, `*_ref`, or `*_file` fields so Local-81 can plan commands without printing secret values.
 
 ### `[compliance]` (optional)
 
-Compliance settings provide defaults for read-only `local26 compliance` commands. Command-line flags override these defaults. These settings do not cause Local-26 to mutate system files.
+Compliance settings provide defaults for read-only `local81 compliance` commands. Command-line flags override these defaults. These settings do not cause Local-81 to mutate system files.
 
 | Key | Type | Required | Notes |
 |---|---|---:|---|
@@ -227,7 +227,7 @@ Named compliance targets can describe project- or host-specific scan roots and p
 
 `[compliance.inventory]` accepts `include_sections` and `extra_paths`. `[compliance.hardening]` accepts `include_advisory`. Harden plans are advisory only and do not apply changes.
 
-## Legacy import rules (`local26 init --import`)
+## Legacy import rules (`local81 init --import`)
 
 Legacy `settings.cfg` import accepts:
 

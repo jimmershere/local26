@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from local26.commands.pull_logs import _load_settings, run_pull_logs
+from local81.commands.pull_logs import _load_settings, run_pull_logs
 
 
 def _write_settings(tmp_path: Path) -> Path:
@@ -46,7 +46,7 @@ def test_run_pull_logs_reads_settings_and_invokes_scp(tmp_path: Path, monkeypatc
         assert text is True
         return Result()
 
-    monkeypatch.setattr("local26.commands.pull_logs.subprocess.run", fake_run)
+    monkeypatch.setattr("local81.commands.pull_logs.subprocess.run", fake_run)
 
     rc = run_pull_logs(settings=str(settings_path))
 
@@ -69,7 +69,7 @@ def test_run_pull_logs_honors_cli_overrides(tmp_path: Path, monkeypatch, capsys)
         calls.append(command)
         return Result()
 
-    monkeypatch.setattr("local26.commands.pull_logs.subprocess.run", fake_run)
+    monkeypatch.setattr("local81.commands.pull_logs.subprocess.run", fake_run)
 
     rc = run_pull_logs(hosts="h1", dest=str(tmp_path / "logs"), jboss_path="/tmp/jboss.log")
 
@@ -90,7 +90,7 @@ def test_run_pull_logs_requires_paths(tmp_path: Path, monkeypatch, capsys) -> No
 
 
 def test_cli_pull_logs_command() -> None:
-    from local26.cli import build_parser
+    from local81.cli import build_parser
 
     parser = build_parser()
     args = parser.parse_args([

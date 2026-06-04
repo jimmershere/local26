@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOCAL81_HOME="${LOCAL81_HOME:-/opt/local81}"
+LOCAL81_VENV="${LOCAL81_VENV:-${LOCAL81_HOME}/venv}"
+
+export LOCAL81_HOME
+export LOCAL81_CONFIG_DIR="${LOCAL81_CONFIG_DIR:-/etc/local81}"
+export LOCAL81_STATE_DIR="${LOCAL81_STATE_DIR:-/var/lib/local81}"
+
+if [ ! -x "${LOCAL81_VENV}/bin/python" ]; then
+  printf 'local81: packaged Python runtime not found at %s\n' "${LOCAL81_VENV}" >&2
+  exit 127
+fi
+
+exec "${LOCAL81_VENV}/bin/python" -m local81.cli "$@"

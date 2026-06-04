@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "local26"
+name = "local81"
 version = "0.1.0"
-description = "Local-26 Python control plane"
+description = "Local-81 Python control plane"
 readme = "README.md"
 requires-python = ">=3.12"
 classifiers = [
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-local26 = "local26.cli:main"
+local81 = "local81.cli:main"
 
 [project.optional-dependencies]
 dev = [

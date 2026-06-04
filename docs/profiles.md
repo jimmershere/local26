@@ -1,32 +1,32 @@
-# Local-26 profiles
+# Local-81 profiles
 
-Profiles let you override base `.local26/config.ini` settings per environment.
+Profiles let you override base `.local81/config.ini` settings per environment.
 
 ## Use a profile
 
 ```bash
-local26 --profile prod deploy --plan .local26/plans/latest.plan.json
-local26 --profile staging doctor
+local81 --profile prod deploy --plan .local81/plans/latest.plan.json
+local81 --profile staging doctor
 ```
 
-Local-26 loads `.local26/profiles/<name>.yaml` and merges it over the base config.
+Local-81 loads `.local81/profiles/<name>.yaml` and merges it over the base config.
 
 ## List profiles
 
 ```bash
-local26 profiles
+local81 profiles
 ```
 
 ## Create a profile
 
 ```bash
-local26 profile create prod
+local81 profile create prod
 ```
 
 ## Profile format
 
 ```yaml
-local26:
+local81:
   profile: prod
 defaults:
   rsync_opts: -aP
@@ -42,4 +42,4 @@ scopes:
 
 - Top-level maps merge with the base config.
 - `scopes` entries merge by scope name.
-- Profile validation is included in `local26 doctor`.
+- Profile validation is included in `local81 doctor`.

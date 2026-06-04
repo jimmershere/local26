@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from local26.runner import RunnerError, run_local, run_remote
+from local81.runner import RunnerError, run_local, run_remote
 
 
 def test_run_local_success() -> None:

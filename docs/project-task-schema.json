@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://jimmershere.github.io/local26/schemas/project-task.schema.json",
-  "title": "Local-26 Project Task",
+  "$id": "https://jimmershere.github.io/local81/schemas/project-task.schema.json",
+  "title": "Local-81 Project Task",
   "description": "Structured bounded work unit for Xander-side execution against a project repo.",
   "type": "object",
   "additionalProperties": false,

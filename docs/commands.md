@@ -3,49 +3,49 @@
 ## Overview
 
 ```
-local26 init [--import PATH] [--force] [--project NAME] [--guided]
-local26 doctor [--plan PATH]
-local26 db <doctor|inventory|tools|monitor|diag|backup|report|audit> [options]
-local26 compliance <report|inventory|harden-plan> [options]
-local26 status
-local26 hooks
-local26 profiles
-local26 profile create NAME
-local26 plan [--scope NAME] [--format json] [--stdout] [--ci] [--summary]
-local26 deploy (--plan PATH | --latest) [options]
-local26 pull [--scope NAME] [--hosts host1,host2] [--rsync-opts OPTS] [--dry-run]
-local26 history [--limit N]
-local26 pull-logs [options]
-local26 diag [options]
-local26 logs RUN_ID
-local26 diff PLAN_A PLAN_B
+local81 init [--import PATH] [--force] [--project NAME] [--guided]
+local81 doctor [--plan PATH]
+local81 db <doctor|inventory|tools|monitor|diag|backup|report|audit> [options]
+local81 compliance <report|inventory|harden-plan> [options]
+local81 status
+local81 hooks
+local81 profiles
+local81 profile create NAME
+local81 plan [--scope NAME] [--format json] [--stdout] [--ci] [--summary]
+local81 deploy (--plan PATH | --latest) [options]
+local81 pull [--scope NAME] [--hosts host1,host2] [--rsync-opts OPTS] [--dry-run]
+local81 history [--limit N]
+local81 pull-logs [options]
+local81 diag [options]
+local81 logs RUN_ID
+local81 diff PLAN_A PLAN_B
 ```
 
 Global option:
 
 ```
-local26 --profile PROFILE <command>
+local81 --profile PROFILE <command>
 ```
-Use `--profile` to apply a profile overlay from `.local26/profiles/` when the command supports it.
+Use `--profile` to apply a profile overlay from `.local81/profiles/` when the command supports it.
 
 ---
 
-## `local26 init`
+## `local81 init`
 
-Initializes the `.local26/` workspace directory structure and generates `config.ini` by importing a legacy `settings.cfg` or a modern config. Guided mode also writes a matching `config.yaml` mirror.
+Initializes the `.local81/` workspace directory structure and generates `config.ini` by importing a legacy `settings.cfg` or a modern config. Guided mode also writes a matching `config.yaml` mirror.
 
 | Flag | Description |
 |---|---|
 | `--import PATH` | Path to legacy or modern config to import |
-| `--force` | Overwrite existing `.local26/config.ini` |
+| `--force` | Overwrite existing `.local81/config.ini` |
 | `--project NAME` | Override project name in generated config |
 | `--guided` | Launch the interactive guided setup flow instead of importing config |
 
 ---
 
-## `local26 plan`
+## `local81 plan`
 
-Generates a deployment plan from `.local26/config.ini` and writes it to `.local26/plans/`.
+Generates a deployment plan from `.local81/config.ini` and writes it to `.local81/plans/`.
 
 | Flag | Description |
 |---|---|
@@ -68,7 +68,7 @@ step_id | type | timeout | status
 - `timeout` — per-step timeout in seconds, or `-` if not set
 - `status` — always `pending` for a newly generated plan
 
-The plan file is still written to `.local26/plans/` unless `--ci` is also set.
+The plan file is still written to `.local81/plans/` unless `--ci` is also set.
 
 Example output:
 ```
@@ -79,11 +79,11 @@ scope:web:0003 | rsync | 30 | pending
 
 ---
 
-## `local26 deploy`
+## `local81 deploy`
 
 Executes a deployment plan.
 
-Before any steps run, deploy enforces the configured `[access]` policy from `.local26/config.ini`. A deploy is blocked when the current operator is denied by user/group policy or when selected plan steps include `remote_cmd` while `access.allow_remote_cmd = false`.
+Before any steps run, deploy enforces the configured `[access]` policy from `.local81/config.ini`. A deploy is blocked when the current operator is denied by user/group policy or when selected plan steps include `remote_cmd` while `access.allow_remote_cmd = false`.
 
 | Flag | Description |
 |---|---|
@@ -104,14 +104,14 @@ Before any steps run, deploy enforces the configured `[access]` policy from `.lo
 ### Recommended first live deploy
 
 ```bash
-local26 deploy --plan .local26/plans/<plan-id>.plan.json --scope main --dry-run --fail-fast
-local26 deploy --plan .local26/plans/<plan-id>.plan.json --scope main --fail-fast
+local81 deploy --plan .local81/plans/<plan-id>.plan.json --scope main --dry-run --fail-fast
+local81 deploy --plan .local81/plans/<plan-id>.plan.json --scope main --fail-fast
 ```
 
 
 ---
 
-## `local26 db`
+## `local81 db`
 
 Manages database operational checks and reports for configured Oracle 19c, PostgreSQL 17, and SQLite targets.
 
@@ -130,31 +130,31 @@ Common options:
 
 | Flag | Description |
 |---|---|
-| `--config PATH` | Config file to read, default `.local26/config.ini` with YAML fallback |
+| `--config PATH` | Config file to read, default `.local81/config.ini` with YAML fallback |
 | `--target NAME` | Restrict to one database target |
 | `--engine oracle19c|postgres17|sqlite` | Restrict by engine |
-| `--output-dir DIR` | Artifact root, default `.local26/db` |
+| `--output-dir DIR` | Artifact root, default `.local81/db` |
 | `--format text|json` | Terminal output format |
 | `--quick` | Skip slower checks where supported |
 | `--execute` | Required for state-changing actions |
 | `--backup-path PATH` | Destination for executable SQLite backups |
 
-Reports are written under `.local26/db/<run-id>/summary.json` and `report.txt`.
+Reports are written under `.local81/db/<run-id>/summary.json` and `report.txt`.
 
-Oracle and PostgreSQL support is intentionally CLI-oriented. Local-26 discovers tools and emits redacted command plans for SQL*Plus/SQLcl, RMAN, Data Pump, AHF/ORAchk, `psql`, native PostgreSQL backup tools, Barman, pgBackRest, exporters, and pgBadger without requiring live services in CI. SQLite uses Python stdlib `sqlite3` for read-only PRAGMA diagnostics and optional online backup.
+Oracle and PostgreSQL support is intentionally CLI-oriented. Local-81 discovers tools and emits redacted command plans for SQL*Plus/SQLcl, RMAN, Data Pump, AHF/ORAchk, `psql`, native PostgreSQL backup tools, Barman, pgBackRest, exporters, and pgBadger without requiring live services in CI. SQLite uses Python stdlib `sqlite3` for read-only PRAGMA diagnostics and optional online backup.
 
 Examples:
 
 ```bash
-local26 db doctor
-local26 db tools --engine oracle19c
-local26 db diag --target app-sqlite --quick
-local26 db backup --target app-sqlite --backup-path .local26/db/app.sqlite.bak --execute
+local81 db doctor
+local81 db tools --engine oracle19c
+local81 db diag --target app-sqlite --quick
+local81 db backup --target app-sqlite --backup-path .local81/db/app.sqlite.bak --execute
 ```
 
 ---
 
-## `local26 status`
+## `local81 status`
 
 Shows the current deployment run state:
 
@@ -165,11 +165,11 @@ Shows the current deployment run state:
 
 **State sources (in order of priority):**
 
-1. `~/.local26/state.json` — global state file (written by external integrations)
-2. `/tmp/local26-state.json` — fallback temp state file
-3. `.local26/runs/` — scans the latest `run.json` in the local project
+1. `~/.local81/state.json` — global state file (written by external integrations)
+2. `/tmp/local81-state.json` — fallback temp state file
+3. `.local81/runs/` — scans the latest `run.json` in the local project
 
-**State file format** (`~/.local26/state.json`):
+**State file format** (`~/.local81/state.json`):
 ```json
 {
   "last_run_id": "20260101T000000Z-12345",
@@ -181,7 +181,7 @@ Shows the current deployment run state:
 
 Example output:
 ```
-Local-26 status
+Local-81 status
 ============
 
 Active runs:
@@ -196,7 +196,7 @@ Latest run:
 
 ---
 
-## `local26 pull`
+## `local81 pull`
 
 Pulls files back from remote hosts using the current project config.
 
@@ -211,7 +211,7 @@ Use this when you need reverse sync from a remote system back into the local wor
 
 ---
 
-## `local26 history`
+## `local81 history`
 
 Shows recent deployment runs, newest first.
 
@@ -221,7 +221,7 @@ Shows recent deployment runs, newest first.
 
 ---
 
-## `local26 pull-logs`
+## `local81 pull-logs`
 
 Collects remote application logs into a local destination folder.
 
@@ -237,7 +237,7 @@ Collects remote application logs into a local destination folder.
 
 ---
 
-## `local26 diag`
+## `local81 diag`
 
 Runs remote diagnostics against one or more hosts.
 
@@ -256,45 +256,45 @@ Runs remote diagnostics against one or more hosts.
 
 ---
 
-## `local26 logs`
+## `local81 logs`
 
 Shows detailed step-by-step output for a single run. `RUN_ID` may be a full run ID or an unambiguous prefix.
 
 ---
 
-## `local26 diff`
+## `local81 diff`
 
 Compares two generated plan files.
 
 Usage:
 
 ```bash
-local26 diff .local26/plans/old.plan.json .local26/plans/new.plan.json
+local81 diff .local81/plans/old.plan.json .local81/plans/new.plan.json
 ```
 
 Use this when you want a quick before/after check on plan generation changes.
 
 ---
 
-## `local26 hooks`
+## `local81 hooks`
 
 Lists supported hook paths and whether each hook is installed and executable.
 
 ---
 
-## `local26 profiles`
+## `local81 profiles`
 
-Lists available profile overlays from `.local26/profiles/`.
-
----
-
-## `local26 profile create`
-
-Creates a scaffold profile file at `.local26/profiles/<name>.yaml`.
+Lists available profile overlays from `.local81/profiles/`.
 
 ---
 
-## `local26 doctor`
+## `local81 profile create`
+
+Creates a scaffold profile file at `.local81/profiles/<name>.yaml`.
+
+---
+
+## `local81 doctor`
 
 Checks environment health and optionally validates a plan file schema.
 
@@ -313,25 +313,25 @@ Checks environment health and optionally validates a plan file schema.
 | `binary:find` | PASS/FAIL | find in PATH |
 | `binary:sha256sum` | PASS/FAIL | sha256sum in PATH |
 | `binary:git` | PASS/WARN | git in PATH (warn if missing; only required for `workspace=git`) |
-| `dir:~/.local26` | PASS/WARN | global state dir readable+writable |
-| `dir:.local26` | PASS/WARN | project workspace dir |
-| `dir:.local26/plans` | PASS/WARN | plans dir |
-| `dir:.local26/runs` | PASS/WARN | runs dir |
-| `dir:.local26/state` | PASS/WARN | state dir |
+| `dir:~/.local81` | PASS/WARN | global state dir readable+writable |
+| `dir:.local81` | PASS/WARN | project workspace dir |
+| `dir:.local81/plans` | PASS/WARN | plans dir |
+| `dir:.local81/runs` | PASS/WARN | runs dir |
+| `dir:.local81/state` | PASS/WARN | state dir |
 | `plan:json` | PASS/FAIL | plan file parses as valid JSON |
 | `plan:schema` | PASS/FAIL | required top-level keys present |
 | `plan:kind` | PASS/FAIL | `kind == "plan"` |
 | `plan:mode` | PASS/FAIL | `mode == "deploy"` |
-| `plan:schema_ver` | PASS/FAIL | `schema == "local26.plan.v0.1"` |
+| `plan:schema_ver` | PASS/FAIL | `schema == "local81.plan.v0.1"` |
 | `plan:scopes` | PASS/WARN | scopes list present and non-empty |
 | `plan:steps` | PASS/WARN | total step count across all scopes |
-| `config:schema` | PASS/WARN/FAIL | `.local26/config.ini` schema validation |
+| `config:schema` | PASS/WARN/FAIL | `.local81/config.ini` schema validation |
 
 **Output format:**
 ```
 [PASS] binary:bash: /bin/bash
 [PASS] binary:python3: /usr/bin/python3
-[WARN] dir:.local26: does not exist
+[WARN] dir:.local81: does not exist
 [FAIL] plan:kind: expected 'plan', got 'notaplan'
 ```
 
@@ -339,9 +339,9 @@ Exit code: `0` if all checks pass, `1` if any check is FAIL.
 
 ---
 
-## `local26 compliance report`
+## `local81 compliance report`
 
-Prints a read-only operational hardening report mapped to selected NIST/CMS control themes. The report includes the existing Local-26 access-control policy checks plus optional local scanners for Linux OS configuration, web server settings, Java/Tomcat, JavaScript, Node.js, and Angular projects.
+Prints a read-only operational hardening report mapped to selected NIST/CMS control themes. The report includes the existing Local-81 access-control policy checks plus optional local scanners for Linux OS configuration, web server settings, Java/Tomcat, JavaScript, Node.js, and Angular projects.
 
 This command reports evidence and recommendations; it does not certify a system or prove compliance.
 
@@ -373,24 +373,24 @@ Options:
 
 Exit code: `0` unless a failed finding meets `--fail-on`. Defaults to `--fail-on high`.
 
-## `local26 compliance inventory`
+## `local81 compliance inventory`
 
 Lists discovered compliance evidence candidates without judging them. This command is read-only and never fails due to hardening findings.
 
 Examples:
 
 ```bash
-local26 compliance inventory --path /srv/myapp
-local26 compliance inventory --path /srv/myapp --format json
+local81 compliance inventory --path /srv/myapp
+local81 compliance inventory --path /srv/myapp --format json
 ```
 
-## `local26 compliance harden-plan`
+## `local81 compliance harden-plan`
 
 Generates a non-mutating remediation plan from compliance findings. It prints recommended settings and manual review notes but does not edit files, change permissions, restart services, run `sudo`, install packages, or contact external services.
 
 Examples:
 
 ```bash
-local26 compliance harden-plan --scope linux --path /
-local26 compliance harden-plan --scope web --path /srv/myapp --format markdown
+local81 compliance harden-plan --scope linux --path /
+local81 compliance harden-plan --scope web --path /srv/myapp --format markdown
 ```

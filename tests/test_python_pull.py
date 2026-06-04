@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from local26.commands.pull import _format_pull_command, run_pull
+from local81.commands.pull import _format_pull_command, run_pull
 
 
-CONFIG_TEMPLATE = """[local26]
+CONFIG_TEMPLATE = """[local81]
 version = 0.1
 project = test
 
@@ -33,8 +33,8 @@ servers = disabled1
 
 
 def _write_config(tmp_path: Path) -> None:
-    (tmp_path / ".local26").mkdir(parents=True, exist_ok=True)
-    (tmp_path / ".local26" / "config.ini").write_text(
+    (tmp_path / ".local81").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".local81" / "config.ini").write_text(
         CONFIG_TEMPLATE.format(
             app_source=tmp_path / "src" / "app",
             api_source=tmp_path / "src" / "api",
@@ -80,7 +80,7 @@ def test_run_pull_uses_subprocess_for_real_run(tmp_path: Path, monkeypatch, caps
         assert text is True
         return Result()
 
-    monkeypatch.setattr("local26.commands.pull.subprocess.run", fake_run)
+    monkeypatch.setattr("local81.commands.pull.subprocess.run", fake_run)
 
     rc = run_pull()
 
@@ -102,7 +102,7 @@ def test_run_pull_missing_scope_fails(tmp_path: Path, monkeypatch, capsys) -> No
 
     err = capsys.readouterr().err
     assert rc == 1
-    assert 'local26: no matching scopes found' in err
+    assert 'local81: no matching scopes found' in err
 
 
 def test_run_pull_skips_disabled_scope(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -118,7 +118,7 @@ def test_run_pull_skips_disabled_scope(tmp_path: Path, monkeypatch, capsys) -> N
 
 
 def test_cli_pull_command() -> None:
-    from local26.cli import build_parser
+    from local81.cli import build_parser
 
     parser = build_parser()
     args = parser.parse_args(["pull", "--scope", "app", "--hosts", "hosta,hostb", "--rsync-opts", "-az --delete", "--dry-run"])

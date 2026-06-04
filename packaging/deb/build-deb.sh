@@ -6,7 +6,7 @@ DEB_DIR="${ROOT_DIR}/packaging/deb"
 BUILD_DIR="${DEB_DIR}/.debbuild"
 PKG_ROOT="${BUILD_DIR}/root"
 ARTIFACT_DIR="${BUILD_DIR}/artifacts"
-APP_ROOT="${PKG_ROOT}/opt/local26"
+APP_ROOT="${PKG_ROOT}/opt/local81"
 APP_LIB="${APP_ROOT}/app"
 APP_VENV="${APP_ROOT}/venv"
 
@@ -33,17 +33,17 @@ if not match:
 print(match.group(1))
 PY
 )"
-RELEASE="${LOCAL26_PACKAGE_RELEASE:-1}"
-PACKAGE_FILE="local26_${VERSION}-${RELEASE}_all.deb"
+RELEASE="${LOCAL81_PACKAGE_RELEASE:-1}"
+PACKAGE_FILE="local81_${VERSION}-${RELEASE}_all.deb"
 
 rm -rf "${BUILD_DIR}"
 mkdir -p "${APP_LIB}" "${APP_VENV}" "${ARTIFACT_DIR}"
 mkdir -p \
   "${PKG_ROOT}/DEBIAN" \
   "${PKG_ROOT}/usr/bin" \
-  "${PKG_ROOT}/etc/local26" \
-  "${PKG_ROOT}/var/lib/local26" \
-  "${PKG_ROOT}/usr/share/doc/local26"
+  "${PKG_ROOT}/etc/local81" \
+  "${PKG_ROOT}/var/lib/local81" \
+  "${PKG_ROOT}/usr/share/doc/local81"
 
 rsync -a "${ROOT_DIR}/bin" "${ROOT_DIR}/docs" "${ROOT_DIR}/examples" "${ROOT_DIR}/src" "${APP_LIB}/"
 install -m 0644 "${ROOT_DIR}/pyproject.toml" "${APP_LIB}/pyproject.toml"
@@ -57,34 +57,34 @@ export PIP_CACHE_DIR="${BUILD_DIR}/pip-cache"
 rm -rf "${APP_LIB}/build" "${APP_LIB}/src"/*.egg-info
 grep -RIl "${PKG_ROOT}" "${APP_VENV}" | xargs -r sed -i "s#${PKG_ROOT}##g"
 
-install -m 0755 "${ROOT_DIR}/packaging/common/local26-wrapper" "${PKG_ROOT}/usr/bin/local26"
-install -m 0644 "${ROOT_DIR}/packaging/rpm/local26.ini" "${PKG_ROOT}/etc/local26/local26.ini.example"
-install -m 0644 "${ROOT_DIR}/README.md" "${PKG_ROOT}/usr/share/doc/local26/README.md"
-install -m 0644 "${DEB_DIR}/README.md" "${PKG_ROOT}/usr/share/doc/local26/README.debian"
+install -m 0755 "${ROOT_DIR}/packaging/common/local81-wrapper" "${PKG_ROOT}/usr/bin/local81"
+install -m 0644 "${ROOT_DIR}/packaging/rpm/local81.ini" "${PKG_ROOT}/etc/local81/local81.ini.example"
+install -m 0644 "${ROOT_DIR}/README.md" "${PKG_ROOT}/usr/share/doc/local81/README.md"
+install -m 0644 "${DEB_DIR}/README.md" "${PKG_ROOT}/usr/share/doc/local81/README.debian"
 
 find "${PKG_ROOT}" -type d -exec chmod 0755 {} +
 find "${PKG_ROOT}" -type f -exec chmod 0644 {} +
-chmod 0755 "${PKG_ROOT}/usr/bin/local26"
+chmod 0755 "${PKG_ROOT}/usr/bin/local81"
 find "${APP_VENV}/bin" -type f -exec chmod 0755 {} +
 find "${APP_VENV}/bin" -type l -exec chmod 0755 {} + 2>/dev/null || true
 
 INSTALLED_SIZE="$(du -sk "${PKG_ROOT}" | awk '{print $1}')"
 cat > "${PKG_ROOT}/DEBIAN/control" <<EOF_CONTROL
-Package: local26
+Package: local81
 Version: ${VERSION}-${RELEASE}
 Section: admin
 Priority: optional
 Architecture: all
-Maintainer: Local-26 Operators <local26@example.invalid>
+Maintainer: Local-81 Operators <local81@example.invalid>
 Installed-Size: ${INSTALLED_SIZE}
 Depends: bash, python3.12, python3.12-venv, openssh-client, rsync, findutils
-Description: Local-26 deployment control plane
- Local-26 is a Python-based deployment and operator control plane for
+Description: Local-81 deployment control plane
+ Local-81 is a Python-based deployment and operator control plane for
  generating plans, validating deploys, and running controlled workflow
  operations.
  .
- This package installs Local-26 as an application bundle under /opt/local26
- and exposes the local26 command through /usr/bin/local26.
+ This package installs Local-81 as an application bundle under /opt/local81
+ and exposes the local81 command through /usr/bin/local81.
 EOF_CONTROL
 
 dpkg-deb --root-owner-group --build "${PKG_ROOT}" "${ARTIFACT_DIR}/${PACKAGE_FILE}"

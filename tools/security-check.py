@@ -46,7 +46,7 @@ SECRET_PATTERNS = (
 )
 
 APPROVED_BASH_LC_CONTEXTS = {
-    ("src/local26/commands/deploy.py", "_run_shell"),
+    ("src/local81/commands/deploy.py", "_run_shell"),
 }
 
 
@@ -162,11 +162,11 @@ def main() -> int:
         *_python_security_findings(tracked_paths),
     ]
     if findings:
-        print("Local-26 security check failed:")
+        print("Local-81 security check failed:")
         for finding in findings:
             print(f"  - {finding}")
         return 1
-    print("Local-26 security check passed.")
+    print("Local-81 security check passed.")
     return 0
 
 
