@@ -55,7 +55,7 @@ def _plan_checks(plan_path: Path) -> list[CheckResult]:
     results.append(CheckResult("FAIL" if missing else "PASS", "plan:schema", f"missing keys: {', '.join(missing)}" if missing else "required keys present"))
     results.append(CheckResult("PASS" if data.get("kind") == "plan" else "FAIL", "plan:kind", f"got {data.get('kind')!r}"))
     results.append(CheckResult("PASS" if data.get("mode") == "deploy" else "FAIL", "plan:mode", f"got {data.get('mode')!r}"))
-    results.append(CheckResult("PASS" if data.get("schema") == "local81.plan.v0.1" else "FAIL", "plan:schema_ver", f"got {data.get('schema')!r}"))
+    results.append(CheckResult("PASS" if data.get("schema") in {"local81.plan.v2", "local81.plan.v0.1"} else "FAIL", "plan:schema_ver", f"got {data.get('schema')!r}"))
     scopes = data.get("scopes", [])
     results.append(CheckResult("PASS" if isinstance(scopes, list) and scopes else "WARN", "plan:scopes", f"count={len(scopes) if isinstance(scopes, list) else 0}"))
     total_steps = sum(len(scope.get("steps", [])) for scope in scopes if isinstance(scope, dict)) if isinstance(scopes, list) else 0

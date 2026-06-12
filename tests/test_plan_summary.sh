@@ -41,7 +41,7 @@ PY
   line_count="$(printf '%s\n' "$out" | grep -c '|' || true)"
   [ "$line_count" -gt 0 ] || { printf 'FAIL: no summary lines found\n'; exit 1; }
 
-  # Each line should match: id | type | timeout | status
+  # Each line should match: id | type | timeout | disposition
   while IFS= read -r line; do
     [[ "$line" == *" | "* ]] || { printf 'FAIL: line missing pipe delimiter: %s\n' "$line"; exit 1; }
     col_count="$(printf '%s\n' "$line" | awk -F'|' '{print NF}')"
@@ -51,8 +51,8 @@ PY
   # Each line should contain a step id like scope:myapp:NNNN
   printf '%s\n' "$out" | grep -q "scope:myapp:" || { printf 'FAIL: expected scope:myapp: in summary\n'; exit 1; }
 
-  # Status column should be "pending" for a fresh plan
-  printf '%s\n' "$out" | grep -q "pending" || { printf 'FAIL: expected pending status\n'; exit 1; }
+  # v2 op-steps are idempotent: disposition column should read "gated"
+  printf '%s\n' "$out" | grep -q "gated" || { printf 'FAIL: expected gated disposition\n'; exit 1; }
 
   # ── Test 2: --summary does NOT print the plan_id line ─────────────────────
   printf '%s\n' "$out" | grep -qvE '^[0-9]{8}T[0-9]{6}Z-' || true  # just make sure there's other content

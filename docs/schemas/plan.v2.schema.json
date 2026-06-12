@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local81/schemas/plan.v2.schema.json",
+  "title": "Local-81 deploy plan (v2)",
+  "description": "A v2 plan is a superset of local81.plan.v0.1: every executable field is unchanged, plus optional desired-state metadata (op + intent) on file and directory steps.",
+  "type": "object",
+  "required": ["kind", "mode", "schema", "plan_id", "scopes"],
+  "properties": {
+    "local81_version": {"type": "string"},
+    "kind": {"const": "plan"},
+    "mode": {"const": "deploy"},
+    "schema": {"enum": ["local81.plan.v2", "local81.plan.v0.1"]},
+    "plan_id": {"type": "string"},
+    "created_at": {"type": "string"},
+    "config_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "scopes": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/scope"}
+    }
+  },
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "required": ["scope", "steps"],
+      "properties": {
+        "scope": {"type": "string"},
+        "inputs": {"type": "object"},
+        "discovery": {"type": "object"},
+        "routing": {"type": "object"},
+        "steps": {"type": "array", "items": {"$ref": "#/$defs/step"}},
+        "summary": {"type": "object"}
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": ["id", "type", "cmd"],
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"enum": ["mkdir", "rsync", "remote_cmd"]},
+        "host": {"type": "string"},
+        "server": {"type": "string"},
+        "cmd": {"type": "string"},
+        "local_path": {"type": "string"},
+        "remote_path": {"type": "string"},
+        "rollback": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "required": ["cmd"], "properties": {"type": {"type": "string"}, "cmd": {"type": "string"}}}
+          ]
+        },
+        "checks": {"type": "object"},
+        "op": {"enum": ["file.synced", "dir.present", "service.running", "package.present"]},
+        "intent": {"$ref": "#/$defs/intent"}
+      },
+      "allOf": [
+        {
+          "comment": "op and intent are paired: a step carries both or neither.",
+          "if": {"required": ["op"]},
+          "then": {"required": ["intent"]}
+        },
+        {
+          "if": {"properties": {"op": {"const": "file.synced"}}, "required": ["op"]},
+          "then": {"properties": {"intent": {"required": ["path", "sha256"]}}}
+        },
+        {
+          "if": {"properties": {"op": {"const": "dir.present"}}, "required": ["op"]},
+          "then": {"properties": {"intent": {"required": ["path"]}}}
+        }
+      ]
+    },
+    "intent": {
+      "type": "object",
+      "properties": {
+        "path": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "name": {"type": "string"},
+        "mode": {"type": "string"},
+        "owner": {"type": "string"},
+        "group": {"type": "string"},
+        "active": {"type": "boolean"},
+        "enabled": {"type": "boolean"},
+        "installed": {"type": "boolean"}
+      }
+    }
+  }
+}

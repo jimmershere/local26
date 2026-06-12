@@ -16,6 +16,7 @@ dist/
 .local81/
 .brv/
 *.egg-info/
+test-env/
 tools/SF-*.b64.txt
 packaging/rpm/*.rpm
 packaging/rpm/rpmbuild/

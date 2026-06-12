@@ -1,6 +1,10 @@
 # Local-81
 ![Local-81 IT operators union seal](docs/assets/local81-logo.png)
 
+[![CI](https://github.com/jimmershere/local81/actions/workflows/ci.yml/badge.svg)](https://github.com/jimmershere/local81/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue.svg)](pyproject.toml)
+
 **Operators’ Local-81 — plan, deploy, audit, hold the line.**
 
 Local-81 is a lean, operator-readable deployment and runbook control plane for file sync, plan generation, deploy execution, diagnostics, and security-conscious operator workflows.

@@ -1,4 +1,16 @@
-# LOCAL-81 Plan Schema v0.1
+# LOCAL-81 Plan Schema v2
+
+`plan` emits `schema: "local81.plan.v2"`. v2 plans are a superset of the legacy
+`local81.plan.v0.1` format: every executable field (`type`, `host`, `cmd`,
+`local_path`/`remote_path`, `rollback`, `checks`) is unchanged, so the executor,
+policy, and rollback machinery read a v2 plan exactly as before. What v2 adds is
+**desired-state metadata** on file and directory steps — an `op` and an `intent`
+— which lets `deploy` skip steps it can prove are already converged. See
+[desired-state.md](desired-state.md) for the convergence model and
+[schemas/plan.v2.schema.json](schemas/plan.v2.schema.json) for the JSON Schema.
+
+`deploy --check` and `doctor` still accept `local81.plan.v0.1` plans, so existing
+plans keep working untouched.
 
 ## Top-level required keys
 
@@ -7,7 +19,7 @@
   "local81_version": "0.1",
   "kind": "plan",
   "mode": "deploy",
-  "schema": "local81.plan.v0.1",
+  "schema": "local81.plan.v2",
   "plan_id": "20260101T000000Z-abc123",
   "created_at": "2026-01-01T00:00:00Z",
   "config_fingerprint": "sha256:<hex>",
@@ -35,6 +47,22 @@ Each `scopes[]` entry contains:
 - `local_path` / `remote_path` for `rsync`
 - `rollback`: `null` or `{type, cmd}`
 - `checks.requires`: `["ssh"]` or `["ssh","rsync"]`
+
+### v2 desired-state fields (optional, per step)
+
+File and directory steps carry an `op` and an `intent` describing the converged
+target. These are advisory to the executor: at apply time `deploy` probes the
+live target and runs the step's `cmd` only when the observed state diverges from
+the intent. A step with no `op`/`intent` is a raw command and always runs.
+
+- `rsync` steps: `op = "file.synced"`, `intent = {path, sha256[, mode, owner, group]}`.
+  `intent.path` equals `remote_path`; `intent.sha256` is the 64-hex digest of the
+  desired source bytes, baked in at plan time.
+- `mkdir` steps: `op = "dir.present"`, `intent = {path[, mode, owner, group]}`.
+
+The gate is **opt-in** (no metadata → run as before) and **fail-open** (any probe
+error → run the `cmd`); it can only skip work it has positively proven converged,
+never hide a needed change.
 
 ## Deterministic ordering
 

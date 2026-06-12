@@ -15,5 +15,7 @@ Local-81 is named in honor of the real **Local 81**, the bakery union local at t
 - [Quickstart](quickstart.md)
 - [Setup guide](setup-guide.md)
 - [Command reference](commands.md)
+- [Plan schema (v2)](plan-schema.md)
+- [Desired-state convergence](desired-state.md)
 - [Troubleshooting](troubleshooting.md)
 - [When to use Local-81](when-to-use-local81.md)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from datetime import datetime, timezone
@@ -11,7 +12,24 @@ from local81.state import load_scope_state
 
 
 LOCAL81_VERSION = "0.1"
-SCHEMA = "local81.plan.v0.1"
+SCHEMA = "local81.plan.v2"
+
+
+def _sha256_file(path: Path) -> str | None:
+    """Hash a local source file so the plan carries the desired content state.
+
+    Deploy diffs this against the observed file_state sha256 to decide whether
+    the rsync push is actually needed (idempotency). Returns None if the file
+    cannot be read; the step then falls back to unconditional push.
+    """
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
 
 
 def _now_compact() -> str:
@@ -96,6 +114,8 @@ def _build_scope(scope, cfg, config_path: Path, only_scope: str | None = None) -
                 steps.append({
                     'id': sid,
                     'type': 'mkdir',
+                    'op': 'dir.present',
+                    'intent': {'path': remote_dir},
                     'host': server,
                     'cmd': cmd,
                     'rollback': None,
@@ -118,9 +138,15 @@ def _build_scope(scope, cfg, config_path: Path, only_scope: str | None = None) -
                 }
                 rollbackable_steps += 1
             cmd += f'-- "{file_path}" "{server}:{remote_path}"'
+            intent: dict = {'path': str(remote_path)}
+            file_sha = _sha256_file(file_path)
+            if file_sha is not None:
+                intent['sha256'] = file_sha
             steps.append({
                 'id': sid,
                 'type': 'rsync',
+                'op': 'file.synced',
+                'intent': intent,
                 'host': server,
                 'cmd': cmd,
                 'local_path': str(file_path),
@@ -166,6 +192,19 @@ def _build_scope(scope, cfg, config_path: Path, only_scope: str | None = None) -
     }
 
 
+def _step_disposition(step: dict) -> str:
+    """Honest idempotency label for a plan step (pyinfra-style).
+
+    A v2 op-step (carries ``op`` + ``intent``) is ``gated``: deploy probes the
+    target and skips it when already converged, so re-runs are no-ops. A step
+    without desired-state metadata is ``always``: it runs on every deploy and is
+    never proven idempotent — that fact is surfaced, not hidden.
+    """
+    if step.get('op') and isinstance(step.get('intent'), dict):
+        return 'gated'
+    return 'always'
+
+
 def _render_summary(plan: dict, plan_path: Path) -> str:
     del plan_path
     lines: list[str] = []
@@ -173,7 +212,7 @@ def _render_summary(plan: dict, plan_path: Path) -> str:
         for step in scope.get('steps', []):
             timeout = step.get('timeout')
             timeout_text = '-' if timeout is None else str(timeout)
-            lines.append(f"{step.get('id', '?')} | {step.get('type', 'step')} | {timeout_text} | pending")
+            lines.append(f"{step.get('id', '?')} | {step.get('type', 'step')} | {timeout_text} | {_step_disposition(step)}")
     return '\n'.join(lines)
 
 

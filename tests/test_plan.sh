@@ -82,7 +82,7 @@ python3 - <<'PY' "$plan_json" "$git_sha"
 import json,sys
 plan=json.loads(sys.argv[1])
 expected_git_sha=sys.argv[2]
-assert plan["schema"]=="local81.plan.v0.1"
+assert plan["schema"]=="local81.plan.v2"
 assert plan["kind"]=="plan"
 assert plan["mode"]=="deploy"
 assert plan["config_fingerprint"].startswith("sha256:")
@@ -102,6 +102,16 @@ assert mkdir_steps, "expected mkdir steps for test1"
 for step in mkdir_steps:
     assert step["cmd"].startswith('ssh "localhost" "mkdir -p -- '), step["cmd"]
     assert '\\"' in step["cmd"], step["cmd"]
+    # v2 desired-state: mkdir steps carry a dir.present op + intent path
+    assert step["op"]=="dir.present", step
+    assert step["intent"]["path"], step
+
+# v2 desired-state: every rsync step carries a file.synced op + the desired
+# content sha256 so deploy can skip pushes that are already converged.
+for step in rsync:
+    assert step["op"]=="file.synced", step
+    assert step["intent"]["path"]==step["remote_path"], step
+    assert len(step["intent"]["sha256"])==64, step["intent"]
 
 space_steps=[s for s in rsync if "hello world.txt" in s["local_path"]]
 assert len(space_steps)==1, len(space_steps)

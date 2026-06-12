@@ -1,9 +1,36 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 from local81.commands.deploy import _resolve_plan_path, parse_hosts_file, run_check, run_deploy
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _write_v2_file_plan(path: Path, *, target: Path, sha256: str, cmd: str,
+                        scope_name: str = "web") -> None:
+    """A v2 desired-state plan with a single local file.synced op-step."""
+    step = {
+        "id": f"scope:{scope_name}:0001",
+        "type": "rsync",
+        "host": "@local",
+        "cmd": cmd,
+        "op": "file.synced",
+        "intent": {"path": str(target), "sha256": sha256},
+        "remote_path": str(target),
+    }
+    payload = {
+        "schema": "local81.plan.v2",
+        "kind": "plan",
+        "mode": "deploy",
+        "plan_id": "v2p1",
+        "scopes": [{"scope": scope_name, "steps": [step]}],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def _write_plan(path: Path, *, cmd: str = 'printf ok', rollback: bool = False,
@@ -165,6 +192,138 @@ def test_run_deploy_missing_scope_is_friendly(tmp_path: Path, monkeypatch, capsy
 
     assert rc == 1
     assert "did not find any matching scopes" in out
+
+
+# ---------------------------------------------------------------------------
+# v2 desired-state: deploy-time convergence gate (live run, no network)
+# ---------------------------------------------------------------------------
+
+def test_run_deploy_skips_converged_op_step(tmp_path: Path, monkeypatch, capsys) -> None:
+    """A v2 file.synced step whose target already matches must not run its cmd.
+
+    The deploy-time gate probes the live file, sees the sha256 already matches
+    the intent, and records the step as converged (action=none) without ever
+    executing the placement command.
+    """
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "deployed.conf"
+    desired = "payload v1\n"
+    target.write_text(desired, encoding="utf-8")
+    sentinel = tmp_path / "ran.flag"
+    plan_path = tmp_path / "plan.json"
+    # cmd would touch a sentinel if it ran; convergence must prevent that.
+    _write_v2_file_plan(plan_path, target=target, sha256=_sha256(desired),
+                        cmd=f"printf x > {sentinel}")
+
+    rc = run_deploy(plan=str(plan_path), scope="web", dry_run=False)
+    capsys.readouterr()
+
+    assert rc == 0
+    assert not sentinel.exists(), "converged step must not execute its command"
+    run_files = list((tmp_path / ".local81" / "runs").glob("*/run.json"))
+    run = json.loads(run_files[0].read_text(encoding="utf-8"))
+    step_rec = run["steps"][0]
+    assert step_rec["action"] == "none"
+    assert step_rec["converged"] is True
+    assert step_rec["rc"] == 0
+    # A converged file.synced step ships nothing, so the deployed-files count is 0.
+    state = json.loads((tmp_path / ".local81" / "state" / "web.json").read_text(encoding="utf-8"))
+    assert state["files_last_deployed_count"] == 0
+
+
+def test_run_deploy_runs_drifted_op_step(tmp_path: Path, monkeypatch, capsys) -> None:
+    """A v2 file.synced step whose target drifted must run its placement cmd."""
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "deployed.conf"
+    target.write_text("stale bytes\n", encoding="utf-8")
+    desired = "payload v2\n"
+    plan_path = tmp_path / "plan.json"
+    # The cmd converges the target to the desired bytes.
+    _write_v2_file_plan(plan_path, target=target, sha256=_sha256(desired),
+                        cmd=f"printf 'payload v2\\n' > {target}")
+
+    rc = run_deploy(plan=str(plan_path), scope="web", dry_run=False)
+    capsys.readouterr()
+
+    assert rc == 0
+    assert target.read_text(encoding="utf-8") == desired
+    run_files = list((tmp_path / ".local81" / "runs").glob("*/run.json"))
+    run = json.loads(run_files[0].read_text(encoding="utf-8"))
+    step_rec = run["steps"][0]
+    assert step_rec["action"] == "update"
+    assert not step_rec.get("converged")
+    state = json.loads((tmp_path / ".local81" / "state" / "web.json").read_text(encoding="utf-8"))
+    assert state["files_last_deployed_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# v2 desired-state: deploy --check drift guard
+# ---------------------------------------------------------------------------
+
+def test_check_fails_on_target_drift(tmp_path: Path, monkeypatch, capsys) -> None:
+    """--check re-gathers facts and fails when a target diverges from intent."""
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "deployed.conf"
+    target.write_text("hand-edited drift\n", encoding="utf-8")  # differs from desired
+    plan_path = tmp_path / "plan.json"
+    _write_v2_file_plan(plan_path, target=target, sha256=_sha256("payload v1\n"),
+                        cmd=f"printf x > {target}")
+
+    rc = run_check(plan=str(plan_path))
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert "Desired-state drift:" in out
+    assert "drift=1" in out
+    assert "target drift" in out
+    assert "--allow-drift" in out
+
+
+def test_check_allow_drift_downgrades_to_warning(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "deployed.conf"
+    target.write_text("hand-edited drift\n", encoding="utf-8")
+    plan_path = tmp_path / "plan.json"
+    _write_v2_file_plan(plan_path, target=target, sha256=_sha256("payload v1\n"),
+                        cmd=f"printf x > {target}")
+
+    rc = run_check(plan=str(plan_path), allow_drift=True)
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "allowed by --allow-drift" in out
+
+
+def test_check_converged_target_is_not_drift(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "deployed.conf"
+    desired = "payload v1\n"
+    target.write_text(desired, encoding="utf-8")
+    plan_path = tmp_path / "plan.json"
+    _write_v2_file_plan(plan_path, target=target, sha256=_sha256(desired),
+                        cmd=f"printf x > {target}")
+
+    rc = run_check(plan=str(plan_path))
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "converged=1" in out
+    assert "drift=0" in out
+
+
+def test_check_absent_target_is_create_not_drift(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "not-there-yet.conf"
+    plan_path = tmp_path / "plan.json"
+    _write_v2_file_plan(plan_path, target=target, sha256=_sha256("payload v1\n"),
+                        cmd=f"printf x > {target}")
+
+    rc = run_check(plan=str(plan_path))
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "create=1" in out
+    assert "drift=0" in out
 
 
 # ---------------------------------------------------------------------------
@@ -569,6 +728,15 @@ def test_cli_deploy_parallel_flag() -> None:
     parser = build_parser()
     args = parser.parse_args(["deploy", "--plan", "x.json", "--parallel"])
     assert args.parallel is True
+
+
+def test_cli_deploy_allow_drift_flag() -> None:
+    from local81.cli import build_parser
+    parser = build_parser()
+    args = parser.parse_args(["deploy", "--plan", "x.json", "--check", "--allow-drift"])
+    assert args.allow_drift is True
+    default = parser.parse_args(["deploy", "--plan", "x.json", "--check"])
+    assert default.allow_drift is False
 
 
 def test_cli_history_command() -> None:

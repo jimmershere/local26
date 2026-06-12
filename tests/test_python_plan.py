@@ -4,8 +4,17 @@ import json
 from pathlib import Path
 
 from local81.cli import build_parser
-from local81.commands.plan import run_plan
+from local81.commands.plan import _step_disposition, run_plan
 from local81.plan_integrity import config_fingerprint, is_valid_config_fingerprint
+
+
+def test_step_disposition_labels_idempotency() -> None:
+    op_step = {"op": "file.synced", "intent": {"path": "/x", "sha256": "0" * 64}}
+    assert _step_disposition(op_step) == "gated"
+    raw_step = {"type": "remote_cmd", "cmd": "systemctl restart app"}
+    assert _step_disposition(raw_step) == "always"
+    # An op marker without a usable intent is not gated -> honest "always".
+    assert _step_disposition({"op": "file.synced", "intent": None}) == "always"
 
 
 def _write_legacy_settings(path: Path, src_dir: Path) -> None:
@@ -46,7 +55,8 @@ def test_run_plan_summary_outputs_step_lines_and_writes_plan(tmp_path: Path, mon
     assert all(" | " in line for line in out)
     assert all(len(line.split(" | ")) == 4 for line in out)
     assert any(line.startswith("scope:myapp:") for line in out)
-    assert all(line.endswith(" | pending") for line in out)
+    # v2 compiler emits only op-steps (mkdir/rsync), all idempotent -> "gated".
+    assert all(line.endswith(" | gated") for line in out)
     assert list((tmp_path / ".local81" / "plans").glob("*.plan.json"))
 
 
