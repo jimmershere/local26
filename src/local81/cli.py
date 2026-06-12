@@ -18,6 +18,7 @@ from .commands.plan import run_plan
 from .commands.profiles import run_profile_create, run_profiles
 from .commands.pull import run_pull
 from .commands.pull_logs import run_pull_logs
+from .commands.schedule import run_schedule
 from .commands.status import run_status
 
 def print_command_reference() -> None:
@@ -39,6 +40,7 @@ def print_command_reference() -> None:
   local81 diag [--project NAME] [--hosts CSV] [--diag-type NAME] [--pid PID]
   local81 pull-logs [--settings PATH] [--hosts CSV] [--dest DIR]
   local81 diff PLAN_A PLAN_B
+  local81 schedule <add|list|remove|doctor> [options]
   local81 help"""
     )
 
@@ -183,6 +185,20 @@ def build_parser() -> argparse.ArgumentParser:
     diff.add_argument("plan_a")
     diff.add_argument("plan_b")
 
+    schedule = sub.add_parser("schedule", help="Render operator-installable systemd timers for recurring local81 commands.")
+    schedule_sub = schedule.add_subparsers(dest="schedule_command", required=True)
+    sched_add = schedule_sub.add_parser("add", help="Define a schedule and render its .service/.timer units.")
+    sched_add.add_argument("name", help="Schedule name (lowercase alnum/_/-).")
+    sched_add.add_argument("--command", dest="command_str", required=True, help="Command to run, e.g. \"local81 deploy --latest --execute\".")
+    sched_add.add_argument("--on-calendar", dest="on_calendar", required=True, help="systemd OnCalendar spec, e.g. \"*-*-* 02:00:00\" or \"daily\".")
+    sched_add.add_argument("--notify-url", dest="notify_url", default=None, help="Optional http(s) webhook POSTed when the run finishes.")
+    sched_add.add_argument("--description", default=None, help="Human description for the unit files.")
+    sched_add.add_argument("--working-dir", dest="working_dir", default=None, help="WorkingDirectory for the service unit.")
+    schedule_sub.add_parser("list", help="List defined schedules.")
+    sched_remove = schedule_sub.add_parser("remove", help="Remove a schedule definition and its rendered units.")
+    sched_remove.add_argument("name", help="Schedule name to remove.")
+    schedule_sub.add_parser("doctor", help="Validate defined schedules and check systemd/flock availability.")
+
     return parser
 
 
@@ -238,6 +254,8 @@ def main() -> int:
         return run_logs(args.run_id, host=args.host)
     if args.command == "diff":
         return run_diff(args.plan_a, args.plan_b)
+    if args.command == "schedule":
+        return run_schedule(args)
     parser.error(f"unsupported command: {args.command}")
     return 2
 

@@ -290,6 +290,29 @@ Use this when you want a quick before/after check on plan generation changes.
 
 ---
 
+## `local81 schedule`
+
+Renders operator-installable **systemd** `.service` + `.timer` units for
+recurring local81 commands. Local-81 never installs or runs a scheduler itself;
+it emits plain files into `.local81/schedules/` that you copy into
+`/etc/systemd/system`. See [Scheduling & triggers](scheduling.md).
+
+Subcommands:
+
+```bash
+local81 schedule add NAME --command "<argv>" --on-calendar "<spec>" \
+    [--notify-url URL] [--description TEXT] [--working-dir DIR]
+local81 schedule list
+local81 schedule remove NAME
+local81 schedule doctor
+```
+
+The rendered wrapper runs the command under `flock -n`, so a slow run never
+overlaps the next timer fire. An optional `--notify-url` becomes a best-effort
+`ExecStartPost` webhook (e.g. to n8n).
+
+---
+
 ## `local81 hooks`
 
 Lists supported hook paths and whether each hook is installed and executable.
