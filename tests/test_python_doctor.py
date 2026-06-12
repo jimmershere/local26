@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from local81.commands.doctor import _plan_checks, run_doctor
+from local81.commands.doctor import _plan_checks, _secrets_checks, run_doctor
 
 
 def test_plan_checks_valid(tmp_path: Path) -> None:
@@ -30,6 +30,31 @@ def test_plan_checks_invalid_json(tmp_path: Path) -> None:
     assert len(results) == 1
     assert results[0].name == "plan:json"
     assert results[0].level == "FAIL"
+
+
+def test_secrets_checks_no_config_is_silent(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert _secrets_checks() == []
+
+
+def test_secrets_checks_counts_managed_refs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    local81 = tmp_path / ".local81"
+    local81.mkdir()
+    (local81 / "config.ini").write_text(
+        """
+[database "local"]
+engine = sqlite
+path = /tmp/app.db
+service_ref = bao://secret/prod/db#password
+""".strip(),
+        encoding="utf-8",
+    )
+    results = _secrets_checks()
+    assert results
+    assert results[0].name == "secrets:refs"
+    assert results[0].level == "PASS"
+    assert "1 managed" in results[0].detail
 
 
 def test_run_doctor_warns_for_missing_project_dirs(tmp_path: Path, monkeypatch, capsys) -> None:
