@@ -8,12 +8,15 @@ version = "0.1.0"
 description = "Local-81 Python control plane"
 readme = "README.md"
 requires-python = ">=3.12"
+license = { text = "MIT" }
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: System :: Systems Administration",
 ]
 dependencies = [
