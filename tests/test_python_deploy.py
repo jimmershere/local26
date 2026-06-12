@@ -70,7 +70,14 @@ def test_resolve_latest_plan_path(tmp_path: Path) -> None:
     assert _resolve_plan_path(use_latest=True, plans_dir=str(plans_dir)) == newer
 
 
-def test_run_deploy_dry_run_writes_run_and_state(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_run_deploy_dry_run_writes_run_record_but_not_state(tmp_path: Path, monkeypatch, capsys) -> None:
+    """A dry run records a run, but must be side-effect free w.r.t. scope state.
+
+    Regression guard for the dry-run state-poisoning defect: a --dry-run deploy
+    used to call _update_scope_state, stamping last_success=now. With the
+    mtime_since_last_success discovery strategy that made the *next real deploy*
+    select zero files and ship nothing. A dry run must never write scope state.
+    """
     monkeypatch.chdir(tmp_path)
     plan_path = tmp_path / "plan.json"
     _write_plan(plan_path)
@@ -86,9 +93,49 @@ def test_run_deploy_dry_run_writes_run_and_state(tmp_path: Path, monkeypatch, ca
     assert run["dry_run"] is True
     assert run["steps"][0]["stdout"] == ""
     assert (run_files[0].parent / "run.log").exists()
-    state = json.loads((tmp_path / ".local81" / "state" / "web.json").read_text(encoding="utf-8"))
+    # The defining assertion: no scope state file is written by a dry run, so
+    # last_success is never poisoned.
+    assert not (tmp_path / ".local81" / "state" / "web.json").exists()
+
+
+def test_dry_run_then_real_deploy_still_ships_files(tmp_path: Path, monkeypatch, capsys) -> None:
+    """End-to-end regression: dry-run a scope, then really deploy it.
+
+    The real deploy must still run its steps and stamp last_success — proving the
+    preceding dry run did not mark the scope as already-deployed.
+    """
+    monkeypatch.chdir(tmp_path)
+    plan_path = tmp_path / "plan.json"
+    _write_plan(plan_path)
+
+    # 1) Preview with a dry run. Must not write state.
+    assert run_deploy(plan=str(plan_path), scope="web", dry_run=True) == 0
+    capsys.readouterr()
+    assert not (tmp_path / ".local81" / "state" / "web.json").exists()
+
+    # 2) Now deploy for real. State is written with a real last_success.
+    rc = run_deploy(plan=str(plan_path), scope="web", dry_run=False)
+    capsys.readouterr()
+    assert rc == 0
+    state_path = tmp_path / ".local81" / "state" / "web.json"
+    assert state_path.exists()
+    state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["last_plan_id"] == "p1"
     assert state["files_last_deployed_count"] == 1
+    assert state["last_success"]  # non-empty timestamp
+
+
+def test_failed_real_deploy_does_not_stamp_last_success(tmp_path: Path, monkeypatch, capsys) -> None:
+    """A real deploy that fails must not stamp last_success (no state file)."""
+    monkeypatch.chdir(tmp_path)
+    plan_path = tmp_path / "plan.json"
+    _write_plan(plan_path, cmd='printf broken >&2; exit 3')
+
+    rc = run_deploy(plan=str(plan_path), scope="web", dry_run=False, fail_fast=True)
+    capsys.readouterr()
+
+    assert rc == 3
+    assert not (tmp_path / ".local81" / "state" / "web.json").exists()
 
 
 def test_run_deploy_failure_records_stderr(tmp_path: Path, monkeypatch, capsys) -> None:
