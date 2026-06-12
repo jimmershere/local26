@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import json
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ from time import monotonic
 
 from local81.config import load_config, resolve_config_path, validate_config
 from local81.execution_safety import summarize_execution_risks
+from local81.fleet import HostOutcome, classify, render_summary, run_fleet
 from local81.hooks import run_hook
 from local81.notifications import NotificationEvent, notify_all
 from local81.plan_integrity import plan_provenance_warnings
@@ -546,12 +548,92 @@ def _deploy_host_group(host: str, steps: list[dict], *, dry_run: bool,
     return {"host": host, "rc": rc, "deployed_files": deployed_files, "steps": steps_out}
 
 
+def _write_host_log(run_dir: Path | None, host: str, steps: list[dict]) -> None:
+    """Write a per-host run log so operators can ``logs <run-id> --host <h>``."""
+    if run_dir is None:
+        return
+    safe = host.replace("/", "_").replace(":", "_")
+    log_path = run_dir / f"{safe}.log"
+    lines = [f"host={host}", ""]
+    for step in steps:
+        tag = "OK" if step.get("rc", -1) == 0 else ("SKIP" if step.get("rc") == -1 else "FAIL")
+        lines.append(f"[{tag}] {step.get('id', '?')} [{step.get('type', 'step')}]")
+        if step.get("stderr"):
+            lines.append(f"  stderr: {step['stderr']}")
+    log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    log_path.chmod(0o600)
+
+
+def _apply_limit(groups: "OrderedDict[str, list[dict]]", limit: str | None) -> "OrderedDict[str, list[dict]]":
+    """Filter host groups by a glob ``--limit`` pattern (fnmatch)."""
+    if not limit:
+        return groups
+    filtered: OrderedDict[str, list[dict]] = OrderedDict()
+    for host, steps in groups.items():
+        if fnmatch.fnmatch(host, limit):
+            filtered[host] = steps
+    return filtered
+
+
+def _run_fleet_deploy(scopes: list[dict], *, dry_run: bool, step_timeout: int | None,
+                      fail_fast: bool, rollback_on_failure: bool, plan_data: dict,
+                      notifications_cfg: dict, notification_warnings: list[str],
+                      quiet: bool, notify: bool, run_id: str, run_dir: Path | None,
+                      max_parallel: int, forks: int, serial: str | None,
+                      max_fail: str | None, limit: str | None) -> tuple[list[dict], int, list[dict]]:
+    """Schedule the plan's hosts in rolling batches with a failure threshold.
+
+    Derives the fleet from the distinct ``host`` of each plan step, applies the
+    ``--limit`` filter, then drives :func:`run_fleet` with a runner that pushes
+    one host's steps and maps its result onto the changed/unchanged/failed
+    taxonomy. Returns ``(all_steps, overall_rc, host_results)``.
+    """
+    groups = _apply_limit(_group_steps_by_host(scopes), limit)
+    hosts = list(groups.keys())
+    if not hosts:
+        print("Local-81 fleet deploy matched no hosts (check --limit).")
+        return [], 1, []
+
+    def runner(host: str) -> HostOutcome:
+        result = _deploy_host_group(
+            host, groups[host], dry_run=dry_run, step_timeout=step_timeout,
+            fail_fast=fail_fast, rollback_on_failure=rollback_on_failure,
+            plan_data=plan_data, notifications_config=notifications_cfg,
+            notifications_log=notification_warnings, quiet=quiet,
+            force_notify=notify, run_id=run_id, run_dir=run_dir,
+            max_parallel=max_parallel,
+        )
+        _write_host_log(run_dir, host, result["steps"])
+        status = classify(result["rc"], result["deployed_files"])
+        return HostOutcome(host=host, status=status, rc=result["rc"],
+                           changed_count=result["deployed_files"], detail=result)
+
+    fleet = run_fleet(hosts, runner, forks=forks, serial=serial, max_fail=max_fail)
+
+    all_steps: list[dict] = []
+    host_results: list[dict] = []
+    for outcome in fleet.outcomes:
+        detail = outcome.detail or {}
+        all_steps.extend(detail.get("steps", []))
+        host_results.append({
+            "host": outcome.host,
+            "rc": outcome.rc,
+            "deployed_files": outcome.changed_count,
+            "status": outcome.status,
+        })
+    print()
+    print(render_summary(fleet))
+    return all_steps, fleet.rc, host_results
+
+
 def run_deploy(*, plan: str | None = None, use_latest: bool = False, scope: str | None = None, max_parallel: int = 1,
                rollback_on_failure: bool = False, step_timeout: int | None = None,
                fail_fast: bool = False, dry_run: bool = False,
                hosts_file: str | None = None, parallel: bool = False,
                check: bool = False, allow_drift: bool = False, profile: str | None = None,
-               notify: bool = False, quiet: bool = False) -> int:
+               notify: bool = False, quiet: bool = False,
+               forks: int | None = None, serial: str | None = None,
+               max_fail: str | None = None, limit: str | None = None) -> int:
     if check:
         return run_check(plan=plan, use_latest=use_latest, scope=scope, allow_drift=allow_drift)
     plan_path = _resolve_plan_path(plan=plan, use_latest=use_latest)
@@ -627,7 +709,21 @@ def run_deploy(*, plan: str | None = None, use_latest: bool = False, scope: str 
     if pre_rc != 0:
         print("Pre-deploy hook failed, aborting deploy.")
         return pre_rc
-    if hosts:
+    fleet_requested = forks is not None or serial is not None or max_fail is not None or limit is not None
+    if fleet_requested:
+        effective_forks = forks if forks is not None else 5
+        all_steps, overall_rc, host_results = _run_fleet_deploy(
+            scopes, dry_run=dry_run, step_timeout=step_timeout, fail_fast=fail_fast,
+            rollback_on_failure=rollback_on_failure, plan_data=plan_data,
+            notifications_cfg=notifications_cfg, notification_warnings=notification_warnings,
+            quiet=quiet, notify=notify, run_id=run_id, run_dir=run_dir,
+            max_parallel=max_parallel, forks=effective_forks, serial=serial,
+            max_fail=max_fail, limit=limit,
+        )
+        if not dry_run and overall_rc == 0:
+            for scope_obj in scopes:
+                _update_scope_state(scope_obj.get("scope", "unknown"), plan_id=plan_data.get("plan_id"), run_id=run_id, rc=overall_rc, deployed_files=sum(hr["deployed_files"] for hr in host_results))
+    elif hosts:
         host_aliases = {h["alias"] for h in hosts}
         host_aliases.update(h["server"] for h in hosts)
         host_aliases.update(h["ip"] for h in hosts)

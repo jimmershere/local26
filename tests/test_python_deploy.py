@@ -762,3 +762,116 @@ def test_cli_diff_command() -> None:
     assert args.command == "diff"
     assert args.plan_a == "a.json"
     assert args.plan_b == "b.json"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: fleet execution (forks / serial / max-fail / limit)
+# ---------------------------------------------------------------------------
+
+def _write_fleet_plan(path: Path, hosts: list[str], *, fail_hosts: set[str] | None = None,
+                      scope_name: str = "web") -> None:
+    fail_hosts = fail_hosts or set()
+    steps = []
+    for i, host in enumerate(hosts, 1):
+        steps.append({
+            "id": f"scope:{scope_name}:{i:04d}",
+            "type": "rsync",
+            "host": host,
+            "cmd": "exit 1" if host in fail_hosts else "printf ok",
+        })
+    payload = {
+        "schema": "local81.plan.v0.1", "kind": "plan", "mode": "deploy",
+        "plan_id": "fleet1",
+        "scopes": [{"scope": scope_name, "steps": steps}],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_fleet_deploy_runs_all_hosts_with_forks(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    plan_path = tmp_path / "plan.json"
+    _write_fleet_plan(plan_path, ["h1", "h2", "h3"])
+
+    rc = run_deploy(plan=str(plan_path), forks=3)
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "Fleet summary:" in out
+    assert "totals: ok=3" in out
+    run_files = list((tmp_path / ".local81" / "runs").glob("*/run.json"))
+    data = json.loads(run_files[0].read_text(encoding="utf-8"))
+    assert {h["host"] for h in data["hosts"]} == {"h1", "h2", "h3"}
+    assert all(h["status"] == "changed" for h in data["hosts"])
+    # Per-host log files are written for each fleet host.
+    for host in ("h1", "h2", "h3"):
+        assert (run_files[0].parent / f"{host}.log").is_file()
+
+
+def test_fleet_chaos_serial_maxfail_stops_before_next_batch(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    plan_path = tmp_path / "plan.json"
+    hosts = [f"h{i}" for i in range(10)]
+    # h1 is in the first batch (h0,h1,h2) and rigged to fail.
+    _write_fleet_plan(plan_path, hosts, fail_hosts={"h1"})
+
+    rc = run_deploy(plan=str(plan_path), forks=3, serial="3", max_fail="1")
+    out = capsys.readouterr().out
+
+    assert rc != 0
+    assert "aborted" in out
+    run_files = list((tmp_path / ".local81" / "runs").glob("*/run.json"))
+    data = json.loads(run_files[0].read_text(encoding="utf-8"))
+    by_host = {h["host"]: h["status"] for h in data["hosts"]}
+    assert by_host["h1"] == "failed"
+    assert by_host["h0"] == "changed"
+    assert by_host["h2"] == "changed"
+    for i in range(3, 10):
+        assert by_host[f"h{i}"] == "skipped"
+
+
+def test_fleet_limit_filters_hosts(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    plan_path = tmp_path / "plan.json"
+    _write_fleet_plan(plan_path, ["web1", "web2", "db1"])
+
+    rc = run_deploy(plan=str(plan_path), limit="web*")
+    capsys.readouterr()
+
+    assert rc == 0
+    run_files = list((tmp_path / ".local81" / "runs").glob("*/run.json"))
+    data = json.loads(run_files[0].read_text(encoding="utf-8"))
+    assert {h["host"] for h in data["hosts"]} == {"web1", "web2"}
+
+
+def test_logs_host_renders_per_host_log(tmp_path: Path, monkeypatch, capsys) -> None:
+    from local81.commands.logs import run_logs
+
+    monkeypatch.chdir(tmp_path)
+    plan_path = tmp_path / "plan.json"
+    _write_fleet_plan(plan_path, ["h1", "h2"])
+    run_deploy(plan=str(plan_path), forks=2)
+    run_id = list((tmp_path / ".local81" / "runs").glob("*/"))[0].name
+    capsys.readouterr()
+
+    rc = run_logs(run_id, host="h1")
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "host=h1" in out
+
+
+def test_cli_deploy_fleet_flags() -> None:
+    from local81.cli import build_parser
+    parser = build_parser()
+    args = parser.parse_args(["deploy", "--latest", "--forks", "10", "--serial", "3",
+                              "--max-fail", "1", "--limit", "web*"])
+    assert args.forks == 10
+    assert args.serial == "3"
+    assert args.max_fail == "1"
+    assert args.limit == "web*"
+
+
+def test_cli_logs_host_flag() -> None:
+    from local81.cli import build_parser
+    parser = build_parser()
+    args = parser.parse_args(["logs", "run-1", "--host", "web1"])
+    assert args.host == "web1"

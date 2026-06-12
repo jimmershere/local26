@@ -20,15 +20,16 @@ def test_main_dispatches_history(monkeypatch) -> None:
 def test_main_dispatches_logs(monkeypatch) -> None:
     called: dict[str, str] = {}
 
-    def fake_run_logs(run_id: str) -> int:
+    def fake_run_logs(run_id: str, *, host: str | None = None) -> int:
         called["run_id"] = run_id
+        called["host"] = host
         return 9
 
     monkeypatch.setattr(cli, "run_logs", fake_run_logs)
     monkeypatch.setattr("sys.argv", ["local81", "logs", "run-123"])
 
     assert cli.main() == 9
-    assert called == {"run_id": "run-123"}
+    assert called == {"run_id": "run-123", "host": None}
 
 
 def test_main_dispatches_hooks(monkeypatch) -> None:
