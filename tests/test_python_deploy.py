@@ -125,6 +125,42 @@ def test_run_deploy_dry_run_writes_run_record_but_not_state(tmp_path: Path, monk
     assert not (tmp_path / ".local81" / "state" / "web.json").exists()
 
 
+def test_run_record_persists_reversibility(tmp_path: Path, monkeypatch, capsys) -> None:
+    """A step with a recorded rollback cmd is marked reversible in run.json.
+
+    This is what makes after-the-fact `local81 rollback <run-id>` possible: the
+    run manifest must carry the per-step rollback block, not just the on-failure
+    replay path.
+    """
+    monkeypatch.chdir(tmp_path)
+    plan_path = tmp_path / "plan.json"
+    _write_plan(plan_path, rollback=True)
+
+    rc = run_deploy(plan=str(plan_path), scope="web", dry_run=True)
+    capsys.readouterr()
+    assert rc == 0
+    run_files = list((tmp_path / ".local81" / "runs").glob("*/run.json"))
+    run = json.loads(run_files[0].read_text(encoding="utf-8"))
+    step = run["steps"][0]
+    assert step["reversible"] is True
+    assert step["rollback"]["cmd"] == "printf rollback"
+
+
+def test_run_record_marks_non_reversible_step(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    plan_path = tmp_path / "plan.json"
+    _write_plan(plan_path, rollback=False)
+
+    rc = run_deploy(plan=str(plan_path), scope="web", dry_run=True)
+    capsys.readouterr()
+    assert rc == 0
+    run_files = list((tmp_path / ".local81" / "runs").glob("*/run.json"))
+    run = json.loads(run_files[0].read_text(encoding="utf-8"))
+    step = run["steps"][0]
+    assert step["reversible"] is False
+    assert "rollback" not in step
+
+
 def test_dry_run_then_real_deploy_still_ships_files(tmp_path: Path, monkeypatch, capsys) -> None:
     """End-to-end regression: dry-run a scope, then really deploy it.
 

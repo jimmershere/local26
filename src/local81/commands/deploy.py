@@ -283,6 +283,14 @@ def _run_step(scope_name: str, step: dict, *, dry_run: bool, step_timeout: int |
         "host": target_host,
         "cmd": step.get("cmd"),
     }
+    # Persist reversibility so a completed run can be rolled back after the fact
+    # (local81 rollback <run-id>), not only during an on-failure rollback.
+    _rollback = step.get("rollback") or {}
+    if _rollback.get("cmd"):
+        step_record["rollback"] = {"type": _rollback.get("type"), "cmd": _rollback["cmd"]}
+        step_record["reversible"] = True
+    else:
+        step_record["reversible"] = False
     started = _now_iso()
     started_monotonic = monotonic()
     # Desired-state gate: on live runs, probe the target and skip op-steps that

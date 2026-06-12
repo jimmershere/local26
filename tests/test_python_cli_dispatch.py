@@ -120,6 +120,71 @@ def test_main_dispatches_schedule_doctor(monkeypatch) -> None:
     assert called == {"command": "doctor"}
 
 
+def test_main_dispatches_rollback(monkeypatch) -> None:
+    called: dict[str, object] = {}
+
+    def fake_run_rollback(run_id: str, *, execute: bool = False) -> int:
+        called["run_id"] = run_id
+        called["execute"] = execute
+        return 21
+
+    monkeypatch.setattr(cli, "run_rollback", fake_run_rollback)
+    monkeypatch.setattr("sys.argv", ["local81", "rollback", "run-9", "--execute"])
+
+    assert cli.main() == 21
+    assert called == {"run_id": "run-9", "execute": True}
+
+
+def test_main_dispatches_rollback_dry_run(monkeypatch) -> None:
+    called: dict[str, object] = {}
+
+    def fake_run_rollback(run_id: str, *, execute: bool = False) -> int:
+        called["run_id"] = run_id
+        called["execute"] = execute
+        return 0
+
+    monkeypatch.setattr(cli, "run_rollback", fake_run_rollback)
+    monkeypatch.setattr("sys.argv", ["local81", "rollback", "run-9"])
+
+    assert cli.main() == 0
+    assert called == {"run_id": "run-9", "execute": False}
+
+
+def test_main_dispatches_gc(monkeypatch) -> None:
+    called: dict[str, object] = {}
+
+    def fake_run_gc(*, keep, max_age_days, execute) -> int:
+        called["keep"] = keep
+        called["max_age_days"] = max_age_days
+        called["execute"] = execute
+        return 22
+
+    monkeypatch.setattr(cli, "run_gc", fake_run_gc)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["local81", "gc", "--keep", "5", "--max-age-days", "30", "--execute"],
+    )
+
+    assert cli.main() == 22
+    assert called == {"keep": 5, "max_age_days": 30, "execute": True}
+
+
+def test_main_dispatches_gc_defaults(monkeypatch) -> None:
+    called: dict[str, object] = {}
+
+    def fake_run_gc(*, keep, max_age_days, execute) -> int:
+        called["keep"] = keep
+        called["max_age_days"] = max_age_days
+        called["execute"] = execute
+        return 0
+
+    monkeypatch.setattr(cli, "run_gc", fake_run_gc)
+    monkeypatch.setattr("sys.argv", ["local81", "gc"])
+
+    assert cli.main() == 0
+    assert called == {"keep": None, "max_age_days": None, "execute": False}
+
+
 def test_main_dispatches_compliance_harden_plan(monkeypatch) -> None:
     called: dict[str, str] = {}
 
