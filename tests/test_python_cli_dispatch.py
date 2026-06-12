@@ -87,6 +87,39 @@ def test_main_dispatches_db_doctor(monkeypatch) -> None:
     assert called == {"command": "doctor", "target": "main"}
 
 
+def test_main_dispatches_schedule_add(monkeypatch) -> None:
+    called: dict[str, str] = {}
+
+    def fake_run_schedule(args) -> int:
+        called["command"] = args.schedule_command
+        called["name"] = args.name
+        called["on_calendar"] = args.on_calendar
+        return 11
+
+    monkeypatch.setattr(cli, "run_schedule", fake_run_schedule)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["local81", "schedule", "add", "nightly", "--command", "local81 deploy --latest", "--on-calendar", "daily"],
+    )
+
+    assert cli.main() == 11
+    assert called == {"command": "add", "name": "nightly", "on_calendar": "daily"}
+
+
+def test_main_dispatches_schedule_doctor(monkeypatch) -> None:
+    called: dict[str, str] = {}
+
+    def fake_run_schedule(args) -> int:
+        called["command"] = args.schedule_command
+        return 3
+
+    monkeypatch.setattr(cli, "run_schedule", fake_run_schedule)
+    monkeypatch.setattr("sys.argv", ["local81", "schedule", "doctor"])
+
+    assert cli.main() == 3
+    assert called == {"command": "doctor"}
+
+
 def test_main_dispatches_compliance_harden_plan(monkeypatch) -> None:
     called: dict[str, str] = {}
 

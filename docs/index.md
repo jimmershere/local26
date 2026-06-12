@@ -20,5 +20,6 @@ Local-81 is named in honor of the real **Local 81**, the bakery union local at t
 - [Connectors](connectors.md)
 - [Fleet execution](fleet.md)
 - [Secrets](secrets.md)
+- [Scheduling & triggers](scheduling.md)
 - [Troubleshooting](troubleshooting.md)
 - [When to use Local-81](when-to-use-local81.md)

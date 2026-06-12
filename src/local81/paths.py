@@ -19,6 +19,7 @@ class Local81Paths:
     captures_dir: Path
     hooks_dir: Path
     profiles_dir: Path
+    schedules_dir: Path
 
 
 def build_paths(root: str | Path = ".") -> Local81Paths:
@@ -38,6 +39,7 @@ def build_paths(root: str | Path = ".") -> Local81Paths:
         captures_dir=local81_dir / "captures",
         hooks_dir=local81_dir / "hooks",
         profiles_dir=local81_dir / "profiles",
+        schedules_dir=local81_dir / "schedules",
     )
 
 
@@ -54,6 +56,7 @@ def ensure_runtime_dirs(root: str | Path = ".") -> Local81Paths:
         paths.captures_dir,
         paths.hooks_dir,
         paths.profiles_dir,
+        paths.schedules_dir,
     ]:
         path.mkdir(parents=True, exist_ok=True)
         path.chmod(0o700)
