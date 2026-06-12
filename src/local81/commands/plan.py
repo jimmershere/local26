@@ -192,6 +192,19 @@ def _build_scope(scope, cfg, config_path: Path, only_scope: str | None = None) -
     }
 
 
+def _step_disposition(step: dict) -> str:
+    """Honest idempotency label for a plan step (pyinfra-style).
+
+    A v2 op-step (carries ``op`` + ``intent``) is ``gated``: deploy probes the
+    target and skips it when already converged, so re-runs are no-ops. A step
+    without desired-state metadata is ``always``: it runs on every deploy and is
+    never proven idempotent — that fact is surfaced, not hidden.
+    """
+    if step.get('op') and isinstance(step.get('intent'), dict):
+        return 'gated'
+    return 'always'
+
+
 def _render_summary(plan: dict, plan_path: Path) -> str:
     del plan_path
     lines: list[str] = []
@@ -199,7 +212,7 @@ def _render_summary(plan: dict, plan_path: Path) -> str:
         for step in scope.get('steps', []):
             timeout = step.get('timeout')
             timeout_text = '-' if timeout is None else str(timeout)
-            lines.append(f"{step.get('id', '?')} | {step.get('type', 'step')} | {timeout_text} | pending")
+            lines.append(f"{step.get('id', '?')} | {step.get('type', 'step')} | {timeout_text} | {_step_disposition(step)}")
     return '\n'.join(lines)
 
 

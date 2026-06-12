@@ -130,6 +130,8 @@ def build_parser() -> argparse.ArgumentParser:
     deploy.add_argument("--no-fail-fast", dest="fail_fast", action="store_false")
     deploy.set_defaults(fail_fast=False)
     deploy.add_argument("--check", action="store_true")
+    deploy.add_argument("--allow-drift", action="store_true",
+                        help="With --check: report target drift from the plan's desired state as a warning instead of failing.")
     deploy.add_argument("--hosts-file", default=None)
     deploy.add_argument("--parallel", action="store_true")
     deploy.add_argument("--notify", action="store_true")
@@ -206,6 +208,7 @@ def main() -> int:
         return run_deploy(plan=args.plan, use_latest=args.latest, scope=args.scope, max_parallel=args.max_parallel,
                           rollback_on_failure=args.rollback_on_failure, step_timeout=args.step_timeout,
                           fail_fast=args.fail_fast, dry_run=args.dry_run, check=args.check,
+                          allow_drift=args.allow_drift,
                           hosts_file=args.hosts_file, parallel=args.parallel, profile=args.profile,
                           notify=args.notify, quiet=args.quiet)
     if args.command == "pull":

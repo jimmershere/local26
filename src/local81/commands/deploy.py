@@ -109,7 +109,60 @@ def _safe_print(*args, **kwargs) -> None:
         print(*args, **kwargs)
 
 
-def run_check(*, plan: str | None = None, use_latest: bool = False, scope: str | None = None) -> int:
+def _drift_check(scopes: list, *, allow_drift: bool) -> tuple[list[str], list[str]]:
+    """Re-gather facts for op-steps and report target drift from desired state.
+
+    Returns ``(errors, warnings)``. For each step that carries desired-state
+    metadata we probe the live target and classify the action deploy would take:
+
+    * ``none``    — already converged (no output).
+    * ``create``  — target absent; a normal first apply, not drift.
+    * ``update``  — target exists but its content differs from the plan's intent.
+      This is drift: an operator-visible divergence. It is an error by default so
+      ``--check`` fails loudly; ``--allow-drift`` downgrades it to a warning.
+    * ``unknown`` — the probe could not run (e.g. SSH unreachable). Fail-open:
+      a warning, never a hard failure, mirroring the deploy-time gate.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    op_steps = [
+        step
+        for scope_item in scopes
+        for step in scope_item.get("steps", [])
+        if step.get("op") and isinstance(step.get("intent"), dict)
+    ]
+    if not op_steps:
+        return errors, warnings
+    counts = {"none": 0, "create": 0, "update": 0, "unknown": 0}
+    drifted: list[str] = []
+    unknowns: list[str] = []
+    for step in op_steps:
+        action, _observed = resolve_step_action(step)
+        if action is None:
+            continue
+        counts[action] = counts.get(action, 0) + 1
+        target = (step.get("intent") or {}).get("path", step.get("id", "?"))
+        if action == "update":
+            drifted.append(f"{step.get('id', '?')} ({target}) diverges from desired state")
+        elif action == "unknown":
+            unknowns.append(f"{step.get('id', '?')} ({target}) could not be probed")
+    print("Desired-state drift:")
+    print(f"  converged={counts['none']} create={counts['create']} "
+          f"drift={counts['update']} unprobed={counts['unknown']}")
+    for item in unknowns:
+        warnings.append(f"could not probe target: {item}")
+    for item in drifted:
+        msg = f"target drift: {item}"
+        if allow_drift:
+            warnings.append(msg + " (allowed by --allow-drift)")
+        else:
+            errors.append(msg + " (re-plan, or override with --allow-drift)")
+    print()
+    return errors, warnings
+
+
+def run_check(*, plan: str | None = None, use_latest: bool = False, scope: str | None = None,
+              allow_drift: bool = False) -> int:
     plan_path = _resolve_plan_path(plan=plan, use_latest=use_latest)
     if plan_path is None or not plan_path.is_file():
         target = plan_path if plan_path is not None else Path(".local81/plans")
@@ -176,6 +229,9 @@ def run_check(*, plan: str | None = None, use_latest: bool = False, scope: str |
             warnings.append(finding.render())
     print(f"\nScopes: {len(scopes)}")
     print(f"Total steps: {total_steps}\n")
+    drift_errors, drift_warnings = _drift_check(scopes if isinstance(scopes, list) else [], allow_drift=allow_drift)
+    errors.extend(drift_errors)
+    warnings.extend(drift_warnings)
     for err in errors:
         print(f"[fail] {err}")
     for warn in warnings:
@@ -494,10 +550,10 @@ def run_deploy(*, plan: str | None = None, use_latest: bool = False, scope: str 
                rollback_on_failure: bool = False, step_timeout: int | None = None,
                fail_fast: bool = False, dry_run: bool = False,
                hosts_file: str | None = None, parallel: bool = False,
-               check: bool = False, profile: str | None = None,
+               check: bool = False, allow_drift: bool = False, profile: str | None = None,
                notify: bool = False, quiet: bool = False) -> int:
     if check:
-        return run_check(plan=plan, use_latest=use_latest, scope=scope)
+        return run_check(plan=plan, use_latest=use_latest, scope=scope, allow_drift=allow_drift)
     plan_path = _resolve_plan_path(plan=plan, use_latest=use_latest)
     if plan_path is None or not plan_path.is_file():
         target = plan_path if plan_path is not None else Path(".local81/plans")

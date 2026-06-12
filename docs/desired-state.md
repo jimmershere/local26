@@ -52,6 +52,20 @@ properties fall out for free:
   run observes the changed `sha256`, reports `update`, and re-runs the placement
   command — restoring the desired bytes.
 
+## `deploy --check` drift guard
+
+`deploy --check` validates the plan structurally and then, for v2 plans, runs the
+same fact-gathering pass deploy would. It classifies each op-step:
+
+- `converged` — target already matches intent.
+- `create` — target absent; a normal first apply, not drift.
+- `drift` — target exists but its content diverges from the plan's desired state.
+- `unprobed` — the probe could not run (e.g. SSH unreachable); fail-open warning.
+
+A `drift` step makes `--check` **fail** by default, so a stale plan or a
+hand-edited target is caught before deploy. `--allow-drift` downgrades drift to a
+warning when the divergence is expected (deploy will reconcile it anyway).
+
 ## Where it lives
 
 - `src/local81/facts/` — read-only probes (`file_state`, `dir_state`, …) and fact

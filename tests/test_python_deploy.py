@@ -257,6 +257,76 @@ def test_run_deploy_runs_drifted_op_step(tmp_path: Path, monkeypatch, capsys) ->
 
 
 # ---------------------------------------------------------------------------
+# v2 desired-state: deploy --check drift guard
+# ---------------------------------------------------------------------------
+
+def test_check_fails_on_target_drift(tmp_path: Path, monkeypatch, capsys) -> None:
+    """--check re-gathers facts and fails when a target diverges from intent."""
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "deployed.conf"
+    target.write_text("hand-edited drift\n", encoding="utf-8")  # differs from desired
+    plan_path = tmp_path / "plan.json"
+    _write_v2_file_plan(plan_path, target=target, sha256=_sha256("payload v1\n"),
+                        cmd=f"printf x > {target}")
+
+    rc = run_check(plan=str(plan_path))
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert "Desired-state drift:" in out
+    assert "drift=1" in out
+    assert "target drift" in out
+    assert "--allow-drift" in out
+
+
+def test_check_allow_drift_downgrades_to_warning(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "deployed.conf"
+    target.write_text("hand-edited drift\n", encoding="utf-8")
+    plan_path = tmp_path / "plan.json"
+    _write_v2_file_plan(plan_path, target=target, sha256=_sha256("payload v1\n"),
+                        cmd=f"printf x > {target}")
+
+    rc = run_check(plan=str(plan_path), allow_drift=True)
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "allowed by --allow-drift" in out
+
+
+def test_check_converged_target_is_not_drift(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "deployed.conf"
+    desired = "payload v1\n"
+    target.write_text(desired, encoding="utf-8")
+    plan_path = tmp_path / "plan.json"
+    _write_v2_file_plan(plan_path, target=target, sha256=_sha256(desired),
+                        cmd=f"printf x > {target}")
+
+    rc = run_check(plan=str(plan_path))
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "converged=1" in out
+    assert "drift=0" in out
+
+
+def test_check_absent_target_is_create_not_drift(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "not-there-yet.conf"
+    plan_path = tmp_path / "plan.json"
+    _write_v2_file_plan(plan_path, target=target, sha256=_sha256("payload v1\n"),
+                        cmd=f"printf x > {target}")
+
+    rc = run_check(plan=str(plan_path))
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "create=1" in out
+    assert "drift=0" in out
+
+
+# ---------------------------------------------------------------------------
 # Phase 2: --check mode
 # ---------------------------------------------------------------------------
 
@@ -658,6 +728,15 @@ def test_cli_deploy_parallel_flag() -> None:
     parser = build_parser()
     args = parser.parse_args(["deploy", "--plan", "x.json", "--parallel"])
     assert args.parallel is True
+
+
+def test_cli_deploy_allow_drift_flag() -> None:
+    from local81.cli import build_parser
+    parser = build_parser()
+    args = parser.parse_args(["deploy", "--plan", "x.json", "--check", "--allow-drift"])
+    assert args.allow_drift is True
+    default = parser.parse_args(["deploy", "--plan", "x.json", "--check"])
+    assert default.allow_drift is False
 
 
 def test_cli_history_command() -> None:
