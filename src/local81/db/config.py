@@ -67,6 +67,26 @@ class DatabaseConfigError(ValueError):
     pass
 
 
+def _ref_syntax_errors(name: str, values: dict[str, Any]) -> list[str]:
+    """Validate any ``*_ref`` value that is a managed ``scheme://`` reference.
+
+    Plain ``*_ref`` values (e.g. an external service name) pass untouched; only
+    values that look like a Local-81 secret reference are syntax-checked, so a
+    typo in a ``bao://``/``sops://``/``env://`` ref fails fast at config load
+    rather than at apply time.
+    """
+    from local81.secrets import SecretRefSyntaxError, is_secret_ref, parse_ref
+
+    errors: list[str] = []
+    for key, value in values.items():
+        if key.endswith("_ref") and isinstance(value, str) and is_secret_ref(value):
+            try:
+                parse_ref(value)
+            except SecretRefSyntaxError as exc:
+                errors.append(f"database {name!r} key {key!r}: {exc}")
+    return errors
+
+
 def _parse_bool(value: Any, *, default: bool = True) -> bool:
     if value is None:
         return default
@@ -90,6 +110,8 @@ def _normalize_target(name: str, values: dict[str, Any]) -> DatabaseTarget:
     for key in values:
         if is_secret_key(key):
             raise DatabaseConfigError(f"database {name!r} must not store literal secret key {key!r}; use *_env, *_ref, or *_file")
+    for message in _ref_syntax_errors(name, values):
+        raise DatabaseConfigError(message)
     settings = {key: value for key, value in values.items() if key not in {"engine", "enabled", "tags"}}
     return DatabaseTarget(
         name=name,
@@ -199,4 +221,5 @@ def validate_database_yaml_targets(data: dict[str, Any]) -> list[str]:
         for key in sorted(options):
             if is_secret_key(key):
                 errors.append(f"database {name!r} key {key!r} must not contain a literal secret; use *_env, *_ref, or *_file")
+        errors.extend(_ref_syntax_errors(name, values))
     return errors

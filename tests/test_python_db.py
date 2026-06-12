@@ -33,6 +33,55 @@ password_env = DB_PASSWORD
     assert targets[0].tags == ["app", "edge"]
 
 
+def test_loads_db_target_with_valid_managed_ref(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.ini"
+    cfg.write_text(
+        """
+[database "local"]
+engine = sqlite
+path = /tmp/app.db
+service_ref = bao://secret/prod/db#password
+""".strip(),
+        encoding="utf-8",
+    )
+    targets = load_database_targets(cfg)
+    assert targets[0].settings["service_ref"] == "bao://secret/prod/db#password"
+
+
+def test_rejects_malformed_managed_ref(tmp_path: Path) -> None:
+    import pytest
+
+    from local81.db.config import DatabaseConfigError
+
+    cfg = tmp_path / "config.ini"
+    cfg.write_text(
+        """
+[database "local"]
+engine = sqlite
+path = /tmp/app.db
+service_ref = bao://missing-key-fragment
+""".strip(),
+        encoding="utf-8",
+    )
+    with pytest.raises(DatabaseConfigError):
+        load_database_targets(cfg)
+
+
+def test_plain_ref_value_is_not_treated_as_managed(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.ini"
+    cfg.write_text(
+        """
+[database "local"]
+engine = sqlite
+path = /tmp/app.db
+service_ref = my-plain-service
+""".strip(),
+        encoding="utf-8",
+    )
+    targets = load_database_targets(cfg)
+    assert targets[0].settings["service_ref"] == "my-plain-service"
+
+
 def test_validate_config_rejects_literal_database_password(tmp_path: Path) -> None:
     local81 = tmp_path / ".local81"
     local81.mkdir()

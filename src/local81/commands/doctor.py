@@ -100,6 +100,32 @@ def _config_checks(profile: str | None) -> list[CheckResult]:
     return results
 
 
+def _secrets_checks() -> list[CheckResult]:
+    """Summarise managed secret references and prove they parse.
+
+    Local-81 stores references (``env://``/``bao://``/``sops://``), never
+    literals. Loading the db config already rejects malformed refs, so a clean
+    load is positive evidence; we surface the count so an operator can see at a
+    glance that indirection is in use.
+    """
+    from local81.db.config import DatabaseConfigError, load_database_targets
+    from local81.secrets import is_secret_ref
+
+    try:
+        targets = load_database_targets()
+    except FileNotFoundError:
+        return []
+    except DatabaseConfigError as exc:
+        return [CheckResult("FAIL", "secrets:refs", str(exc))]
+    ref_count = sum(
+        1
+        for target in targets
+        for value in target.settings.values()
+        if isinstance(value, str) and is_secret_ref(value)
+    )
+    return [CheckResult("PASS", "secrets:refs", f"{ref_count} managed reference(s) parse cleanly")]
+
+
 def run_doctor(plan: str | None = None, profile: str | None = None) -> int:
     checks: list[CheckResult] = [
         _binary_check("bash"),
@@ -116,6 +142,7 @@ def run_doctor(plan: str | None = None, profile: str | None = None) -> int:
         _dir_check(".local81/state"),
     ]
     checks.extend(_config_checks(profile))
+    checks.extend(_secrets_checks())
     for finding in compliance_findings():
         checks.append(CheckResult(finding.level, f"policy:{finding.control}", finding.detail))
     if plan:
