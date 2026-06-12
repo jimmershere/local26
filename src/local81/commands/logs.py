@@ -20,11 +20,25 @@ def _find_run(run_id: str, runs_dir: str = ".local81/runs") -> Path | None:
     return None
 
 
-def render_run_log(run_id: str, *, runs_dir: str = ".local81/runs") -> str:
-    """Render full output for a single run."""
+def _render_host_log(run_dir: Path, host: str) -> str:
+    """Render the per-host log file written by a fleet deploy, if present."""
+    safe = host.replace("/", "_").replace(":", "_")
+    log_path = run_dir / f"{safe}.log"
+    if not log_path.is_file():
+        available = sorted(p.stem for p in run_dir.glob("*.log") if p.name not in {"run.log", "rollback.log"})
+        hint = f" Available hosts: {', '.join(available)}" if available else ""
+        return f"No per-host log for host '{host}' in {run_dir.name}.{hint}"
+    return log_path.read_text(encoding="utf-8")
+
+
+def render_run_log(run_id: str, *, runs_dir: str = ".local81/runs", host: str | None = None) -> str:
+    """Render full output for a single run, or one host's log when ``host`` set."""
     run_file = _find_run(run_id, runs_dir)
     if not run_file:
         return f"Run not found: {run_id}\nCheck 'local81 history' for available run IDs."
+
+    if host:
+        return _render_host_log(run_file.parent, host)
 
     try:
         data = json.loads(run_file.read_text(encoding="utf-8"))
@@ -70,6 +84,6 @@ def render_run_log(run_id: str, *, runs_dir: str = ".local81/runs") -> str:
     return "\n".join(lines)
 
 
-def run_logs(run_id: str) -> int:
-    print(render_run_log(run_id))
+def run_logs(run_id: str, *, host: str | None = None) -> int:
+    print(render_run_log(run_id, host=host))
     return 0

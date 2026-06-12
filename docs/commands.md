@@ -99,8 +99,21 @@ Before any steps run, deploy enforces the configured `[access]` policy from `.lo
 | `--allow-drift` | With `--check`: report a target diverging from the plan's desired state as a warning instead of failing |
 | `--hosts-file PATH` | Restrict execution to hosts listed in a file |
 | `--parallel` | Enable parallel host execution where supported |
+| `--forks N` | Fleet mode: max hosts executing concurrently within a batch (default 5) |
+| `--serial N\|N%` | Fleet mode: rolling batch size; batches run sequentially (default: one batch) |
+| `--max-fail N\|N%` | Fleet mode: abort new batches once failures reach the threshold (default 0 = first failure) |
+| `--limit GLOB` | Fleet mode: restrict to plan hosts matching a glob pattern |
 | `--notify` | Emit notification output for wrapped/operator workflows |
 | `--quiet` | Reduce normal progress chatter |
+
+Any of `--forks`, `--serial`, `--max-fail`, or `--limit` activates **fleet
+mode**: the plan's distinct step hosts become the fleet, are partitioned into
+rolling `--serial` batches, and each batch runs up to `--forks` hosts at once.
+After every batch the cumulative failure count is checked against `--max-fail`;
+once breached, remaining hosts are marked `skipped` and no new batch starts. A
+final summary reports `ok / changed / unchanged / failed / skipped`, and each
+host's steps are written to `.local81/runs/<run-id>/<host>.log` (view with
+`local81 logs <run-id> --host <host>`). See [Fleet execution](fleet.md).
 
 ### Recommended first live deploy
 

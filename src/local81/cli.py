@@ -136,6 +136,14 @@ def build_parser() -> argparse.ArgumentParser:
     deploy.add_argument("--parallel", action="store_true")
     deploy.add_argument("--notify", action="store_true")
     deploy.add_argument("--quiet", action="store_true")
+    deploy.add_argument("--forks", type=int, default=None,
+                        help="Fleet mode: max hosts executing concurrently within a batch (default 5).")
+    deploy.add_argument("--serial", default=None,
+                        help="Fleet mode: rolling batch size as N or N%% (default: one batch).")
+    deploy.add_argument("--max-fail", dest="max_fail", default=None,
+                        help="Fleet mode: abort new batches once failures reach N or N%% (default 0 = first failure).")
+    deploy.add_argument("--limit", default=None,
+                        help="Fleet mode: restrict to hosts matching a glob pattern.")
 
     pull = sub.add_parser("pull", help="Pull files back from configured remote hosts.")
     pull.add_argument("--scope", default=None)
@@ -169,6 +177,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     logs = sub.add_parser("logs", help="Show logs for one run.")
     logs.add_argument("run_id")
+    logs.add_argument("--host", default=None, help="Show the per-host log for a single fleet host.")
 
     diff = sub.add_parser("diff", help="Compare two deployment plan files.")
     diff.add_argument("plan_a")
@@ -210,7 +219,8 @@ def main() -> int:
                           fail_fast=args.fail_fast, dry_run=args.dry_run, check=args.check,
                           allow_drift=args.allow_drift,
                           hosts_file=args.hosts_file, parallel=args.parallel, profile=args.profile,
-                          notify=args.notify, quiet=args.quiet)
+                          notify=args.notify, quiet=args.quiet,
+                          forks=args.forks, serial=args.serial, max_fail=args.max_fail, limit=args.limit)
     if args.command == "pull":
         return run_pull(scope=args.scope, hosts=args.hosts, rsync_opts=args.rsync_opts, dry_run=args.dry_run, profile=args.profile)
     if args.command == "history":
@@ -225,7 +235,7 @@ def main() -> int:
                         out_dir=args.out_dir, ssh_user=args.ssh_user,
                         include_disabled=args.include_disabled, dry_run=args.dry_run)
     if args.command == "logs":
-        return run_logs(args.run_id)
+        return run_logs(args.run_id, host=args.host)
     if args.command == "diff":
         return run_diff(args.plan_a, args.plan_b)
     parser.error(f"unsupported command: {args.command}")
