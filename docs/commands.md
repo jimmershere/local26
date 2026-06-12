@@ -313,6 +313,40 @@ overlaps the next timer fire. An optional `--notify-url` becomes a best-effort
 
 ---
 
+## `local81 rollback`
+
+Reverses a **completed** deploy run after the fact, using the per-step rollback
+commands recorded in its `run.json`. Like every mutating action it is **dry-run
+unless `--execute`**. See [Rollback](rollback.md).
+
+```bash
+local81 rollback RUN_ID            # show the reverse plan only
+local81 rollback RUN_ID --execute  # apply it, writing a new rollback.json record
+```
+
+Only steps that recorded a concrete rollback command (today: a `cp -a` restore
+from the rsync `--backup` copy) are reversed, in LIFO order. Steps that made no
+change, did not succeed, were skipped, or have no recorded reverse command are
+surfaced as explicit **skips with a reason** — never silently treated as undone.
+
+---
+
+## `local81 gc`
+
+Prunes old run directories under `.local81/runs/` by **count** and/or **age**.
+Dry-run unless `--execute`.
+
+```bash
+local81 gc --keep 20                 # preview: keep newest 20, drop the rest
+local81 gc --max-age-days 90         # preview: drop anything older than 90 days
+local81 gc --keep 20 --max-age-days 90 --execute
+```
+
+With both bounds set, a run survives only if it is within the newest `--keep`
+*and* younger than `--max-age-days`. With neither, nothing is pruned.
+
+---
+
 ## `local81 hooks`
 
 Lists supported hook paths and whether each hook is installed and executable.

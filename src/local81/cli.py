@@ -9,6 +9,7 @@ from .commands.deploy import run_deploy
 from .commands.diag import run_diag
 from .commands.diff import run_diff
 from .commands.doctor import run_doctor
+from .commands.gc import run_gc
 from .commands.guided import run_guided
 from .commands.history import run_history
 from .commands.hooks import run_hooks
@@ -18,6 +19,7 @@ from .commands.plan import run_plan
 from .commands.profiles import run_profile_create, run_profiles
 from .commands.pull import run_pull
 from .commands.pull_logs import run_pull_logs
+from .commands.rollback import run_rollback
 from .commands.schedule import run_schedule
 from .commands.status import run_status
 
@@ -41,6 +43,8 @@ def print_command_reference() -> None:
   local81 pull-logs [--settings PATH] [--hosts CSV] [--dest DIR]
   local81 diff PLAN_A PLAN_B
   local81 schedule <add|list|remove|doctor> [options]
+  local81 rollback RUN_ID [--execute]
+  local81 gc [--keep N] [--max-age-days D] [--execute]
   local81 help"""
     )
 
@@ -199,6 +203,15 @@ def build_parser() -> argparse.ArgumentParser:
     sched_remove.add_argument("name", help="Schedule name to remove.")
     schedule_sub.add_parser("doctor", help="Validate defined schedules and check systemd/flock availability.")
 
+    rollback = sub.add_parser("rollback", help="Reverse a completed deploy run using its recorded backups.")
+    rollback.add_argument("run_id", help="Run ID (exact or prefix) to roll back.")
+    rollback.add_argument("--execute", action="store_true", help="Apply the rollback; without it, only show the plan.")
+
+    gc = sub.add_parser("gc", help="Prune old run directories under .local81/runs/ by count and/or age.")
+    gc.add_argument("--keep", type=int, default=None, help="Keep the newest N run directories.")
+    gc.add_argument("--max-age-days", dest="max_age_days", type=int, default=None, help="Remove runs older than D days.")
+    gc.add_argument("--execute", action="store_true", help="Actually delete; without it, only show what would be removed.")
+
     return parser
 
 
@@ -256,6 +269,10 @@ def main() -> int:
         return run_diff(args.plan_a, args.plan_b)
     if args.command == "schedule":
         return run_schedule(args)
+    if args.command == "rollback":
+        return run_rollback(args.run_id, execute=args.execute)
+    if args.command == "gc":
+        return run_gc(keep=args.keep, max_age_days=args.max_age_days, execute=args.execute)
     parser.error(f"unsupported command: {args.command}")
     return 2
 
