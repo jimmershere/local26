@@ -591,7 +591,7 @@ def run_deploy(*, plan: str | None = None, use_latest: bool = False, scope: str 
         for hr in host_results:
             status = "ok" if hr["rc"] == 0 else f"FAILED (rc={hr['rc']})"
             print(f"  {hr['host']}: {status} ({hr['deployed_files']} files)")
-        if dry_run or overall_rc == 0:
+        if not dry_run and overall_rc == 0:
             for scope_obj in scopes:
                 _update_scope_state(scope_obj.get("scope", "unknown"), plan_id=plan_data.get("plan_id"), run_id=run_id, rc=overall_rc, deployed_files=sum(hr["deployed_files"] for hr in host_results))
     else:
@@ -599,7 +599,7 @@ def run_deploy(*, plan: str | None = None, use_latest: bool = False, scope: str 
             scope_name = scope_obj.get("scope", "unknown")
             steps_out, rc, deployed_files = _deploy_scope_steps(scope_obj, dry_run=dry_run, step_timeout=step_timeout, fail_fast=fail_fast, rollback_on_failure=rollback_on_failure, plan_data=plan_data, notifications_config=notifications_cfg, notifications_log=notification_warnings, quiet=quiet, force_notify=notify, run_id=run_id, run_dir=run_dir, max_parallel=max_parallel)
             all_steps.extend(steps_out)
-            if dry_run or rc == 0:
+            if not dry_run and rc == 0:
                 _update_scope_state(scope_name, plan_id=plan_data.get("plan_id"), run_id=run_id, rc=rc, deployed_files=deployed_files)
             if rc != 0:
                 overall_rc = rc
