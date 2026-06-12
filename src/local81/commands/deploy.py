@@ -16,6 +16,7 @@ from local81.hooks import run_hook
 from local81.notifications import NotificationEvent, notify_all
 from local81.plan_integrity import plan_provenance_warnings
 from local81.policy import enforce_deploy_policy
+from local81.resolve import resolve_step_action
 from local81.state import load_scope_state
 
 _print_lock = Lock()
@@ -226,6 +227,25 @@ def _run_step(scope_name: str, step: dict, *, dry_run: bool, step_timeout: int |
     }
     started = _now_iso()
     started_monotonic = monotonic()
+    # Desired-state gate: on live runs, probe the target and skip op-steps that
+    # are already converged. Opt-in (raw-command steps return action=None) and
+    # fail-open (probe errors -> action 'unknown' -> the step still runs).
+    if not dry_run:
+        action, observed = resolve_step_action(step)
+        if action is not None:
+            step_record["action"] = action
+            step_record["observed_state"] = observed
+            if action == "none":
+                step_record.update({
+                    "rc": 0,
+                    "started_at": started,
+                    "finished_at": _now_iso(),
+                    "stdout": "",
+                    "stderr": "",
+                    "duration_seconds": monotonic() - started_monotonic,
+                    "converged": True,
+                })
+                return step_record
     timeout_seconds = step.get("timeout")
     if timeout_seconds is None:
         timeout_seconds = step_timeout
@@ -378,7 +398,7 @@ def _deploy_scope_steps(scope_obj: dict, *, dry_run: bool, step_timeout: int | N
                 step_record = batch_results[batch_index]
                 steps_out.append(step_record)
                 if step_record["rc"] == 0:
-                    if parallel_step.get("type") == "rsync":
+                    if parallel_step.get("type") == "rsync" and not step_record.get("converged"):
                         deployed_files += 1
                     if parallel_step.get("rollback") and parallel_step["rollback"].get("cmd"):
                         successful_with_rollback.append(parallel_step)
@@ -417,7 +437,7 @@ def _deploy_scope_steps(scope_obj: dict, *, dry_run: bool, step_timeout: int | N
         )
         steps_out.append(step_record)
         if step_record["rc"] == 0:
-            if step.get("type") == "rsync":
+            if step.get("type") == "rsync" and not step_record.get("converged"):
                 deployed_files += 1
             if step.get("rollback") and step["rollback"].get("cmd"):
                 successful_with_rollback.append(step)

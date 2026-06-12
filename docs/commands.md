@@ -322,7 +322,7 @@ Checks environment health and optionally validates a plan file schema.
 | `plan:schema` | PASS/FAIL | required top-level keys present |
 | `plan:kind` | PASS/FAIL | `kind == "plan"` |
 | `plan:mode` | PASS/FAIL | `mode == "deploy"` |
-| `plan:schema_ver` | PASS/FAIL | `schema == "local81.plan.v0.1"` |
+| `plan:schema_ver` | PASS/FAIL | `schema` is `local81.plan.v2` or `local81.plan.v0.1` |
 | `plan:scopes` | PASS/WARN | scopes list present and non-empty |
 | `plan:steps` | PASS/WARN | total step count across all scopes |
 | `config:schema` | PASS/WARN/FAIL | `.local81/config.ini` schema validation |
