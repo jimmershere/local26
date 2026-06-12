@@ -20,21 +20,16 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from .connectors import Connector, LocalConnector, SshConnector
+from .connectors import Connector, connector_for_target
 from .facts.probes import dir_state, file_state, package_state, service_state
 from .ops.models import Command, DirIntent, FileIntent, PackageIntent, ServiceIntent
 from .ops.operations import dir_present, file_synced, package_present, service_running
-
-# Hosts that mean "the control node itself" — probed locally, no SSH.
-_LOCAL_HOSTS = {"@local", "local"}
 
 
 def connector_for_host(host: str | None, *, factory: Callable[[str | None], Connector] | None = None) -> Connector:
     if factory is not None:
         return factory(host)
-    if host is None or host in _LOCAL_HOSTS:
-        return LocalConnector()
-    return SshConnector(host)
+    return connector_for_target(host)
 
 
 def resolve_step_action(
